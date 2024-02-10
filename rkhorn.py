@@ -10,6 +10,14 @@ from scipy.stats import norm, expon
 
 import matplotlib.pyplot as plt
 
+
+# All units converted internally to:
+# seconds
+# MeV
+# meters
+
+
+# Inspiration:
 # https://www.geeksforgeeks.org/runge-kutta-4th-order-method-solve-differential-equation/
 # https://math.stackexchange.com/questions/14942/runge-kutta-method-for-newton-law
 # https://primer-computational-mathematics.github.io/book/c_mathematics/numerical_methods/5_Runge_Kutta_method.html
@@ -46,7 +54,7 @@ def RungeKuttaCoupled(t, x, y, z, dt, dxdt, dydt, dzdt):
 
 class ChargedPionFluxMiniBooNE:
     def __init__(self, proton_energy=8000.0, meson_charge=1.0, solid_angle_cut=0.00924,
-                 n_samples=10000, n_pot=18.75e20):
+                 n_samples=10000, n_pot=18.75e20, verbose=False):
         self.n_samples = n_samples
         self.solid_angle_cut = solid_angle_cut
         self.charge = meson_charge
@@ -74,7 +82,8 @@ class ChargedPionFluxMiniBooNE:
         self.pip_wgt_post_horn = []
         self.acceptance_wgt = []
 
-        self.rksolver = RKHorn(horn_current=170.0, particle_mass=M_PI, charge=self.charge, step=0.1)
+        self.rksolver = RKHorn(horn_current=170.0, particle_mass=M_PI,
+                               particle_charge=self.charge, step_size_ns=0.1)
         self.meson_flux_pre_horn = None
 
     def sigmap(self, p):
@@ -160,7 +169,6 @@ class ChargedPionFluxMiniBooNE:
         self.simulate_beam_spot()
         self.meson_flux_pre_horn = self.charged_meson_flux_mc(p_min=0.05, p_max=7.0,
                                         theta_min=0.0, theta_max=np.pi/4)
-        print(self.meson_flux_pre_horn)
 
         self.focus_pions()
 
@@ -170,15 +178,18 @@ class ChargedPionFluxMiniBooNE:
 
 class RKHorn:
     """
-    Takes in initial position r0 in meters
-    initial momentum in MeV
+    Takes in horn parameters
     step size in nanoseconds
     Horn Current in kiloamps
     Elementary charge of particle
+    dat file of horn geometry (z in cm, r in cm)
     """
-    def __init__(self, r0=[0.0, 0.0, 0.0], p0 = [0.0, 0.0, 10.0], step=0.1, particle_mass=M_PI,
-                    charge=1.0, horn_current=170.0):
+    def __init__(self, particle_mass=M_PI, particle_charge=1.0, horn_current=170.0,
+                 horn_geometry_file="data/mb_horn_radius_by_z.txt", horn_outer_radius=0.3,
+                 step_size_ns=0.1):
         # initial conditions
+        r0=[0.0, 0.0, 0.0]
+        p0=[0.0, 0.0, 0.0]
         self.t = [0.0]
         self.x = [r0[0]]
         self.y = [r0[1]]
@@ -192,15 +203,15 @@ class RKHorn:
         self.is_alive = True
 
         # solve params
-        self.dt = step * 1e-9  # convert ns to s
-        self.q = charge * CHARGE_COULOMBS  # convert to coulombs
+        self.dt = step_size_ns * 1e-9  # convert ns to s
+        self.q = particle_charge * CHARGE_COULOMBS  # convert to coulombs
         self.m = particle_mass / MEV_PER_KG  # convert to kg
         self.current = horn_current * 1000.0  # convert to Amps
 
+        self.horn_radius_by_z = np.genfromtxt(horn_geometry_file)
         self.horn_start = 0.0  # meters
-        self.horn_end = 1.9  # meters
-        self.horn_radius_by_z = np.genfromtxt("data/mb_horn_radius_by_z.txt", delimiter=",")
-        self.horn_max_radius = 0.3
+        self.horn_end = max(1e-2*self.horn_radius_by_z[:,0])  # meters
+        self.horn_max_radius = horn_outer_radius
     
     def inner_radius(self, z):
         return np.interp(z, 1e-2*self.horn_radius_by_z[:,0], 1e-2*self.horn_radius_by_z[:,1])
@@ -233,8 +244,6 @@ class RKHorn:
         # Update velocity
         t_new, px_new, py_new, pz_new = RungeKuttaCoupled(self.t[-1], self.px[-1], self.py[-1], self.pz[-1],
                                                             self.dt, self.dpxdtau, self.dpydtau, self.dpzdtau)
-        print("new px = ", px_new)
-
         self.px.append(px_new)
         self.py.append(py_new)
         self.pz.append(pz_new)
@@ -246,9 +255,8 @@ class RKHorn:
         self.y.append(self.y[-1] + self.dt * py_new)
         self.z.append(self.z[-1] + self.dt * pz_new)
 
-        #print("new x, y, z = ", self.x[-1], self.y[-1], self.z[-1])
-
-    def set_new_particle(self, r0=[0.0, 0.0, 0.0], p0 =[0.0, 0.0, 10.0], particle_mass=M_PI, charge=1.0):
+    def set_new_particle(self, r0=[0.0, 0.0, 0.0], p0 =[0.0, 0.0, 10.0],
+                         particle_mass=M_PI, charge=1.0):
         # reset initial conditions
         self.t = [0.0]
         self.x = [r0[0]]
