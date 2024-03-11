@@ -54,7 +54,7 @@ def RungeKuttaCoupled(t, x, y, z, dt, dxdt, dydt, dzdt):
 
 class ChargedPionFluxMiniBooNE:
     def __init__(self, proton_energy=8000.0, meson_charge=1.0, solid_angle_cut=0.00924,
-                 n_samples=10000, n_pot=18.75e20, verbose=False):
+                 n_samples=10000, n_pot=18.75e20, horn_current=170.0, verbose=False):
         self.n_samples = n_samples
         self.solid_angle_cut = solid_angle_cut
         self.charge = meson_charge
@@ -82,7 +82,7 @@ class ChargedPionFluxMiniBooNE:
         self.pip_wgt_post_horn = []
         self.acceptance_wgt = []
 
-        self.rksolver = RKHorn(horn_current=170.0, particle_mass=M_PI,
+        self.rksolver = RKHorn(horn_current=horn_current, particle_mass=M_PI,
                                particle_charge=self.charge, step_size_ns=0.1)
         self.meson_flux_pre_horn = None
 
@@ -151,6 +151,9 @@ class ChargedPionFluxMiniBooNE:
             p = pflux[0]
             theta = pflux[1]
             wgt = pflux[2]
+
+            print("Momentum is currently p={}".format(p))
+
             
             self.rksolver.set_new_particle(r0=[self.x0[i], self.y0[i], self.z0[i]],
                                            p0=[p*cos(phis[i])*sin(theta), p*sin(phis[i])*sin(theta), p*cos(theta)],
@@ -205,7 +208,8 @@ class RKHorn:
         # solve params
         self.dt = step_size_ns * 1e-9  # convert ns to s
         self.q = particle_charge * CHARGE_COULOMBS  # convert to coulombs
-        self.m = particle_mass / MEV_PER_KG  # convert to kg
+        self.m = particle_mass
+        self.m_kg = particle_mass / MEV_PER_KG  # convert to kg
         self.current = horn_current * 1000.0  # convert to Amps
 
         self.horn_radius_by_z = np.genfromtxt(horn_geometry_file)
@@ -229,13 +233,13 @@ class RKHorn:
         return (MU0 * self.current / (2 * pi * r)) * np.array([-sin(theta), cos(theta), 0.0])
 
     def dpxdtau(self, px, py, pz):
-        return (self.q/self.m) * (self.local_B[2] * py - self.local_B[1] * pz)
+        return (self.q/self.m_kg) * (self.local_B[2] * py - self.local_B[1] * pz)
     
     def dpydtau(self, px, py, pz):
-        return (self.q/self.m) * (-self.local_B[2] * px + self.local_B[0] * pz)
+        return (self.q/self.m_kg) * (-self.local_B[2] * px + self.local_B[0] * pz)
     
     def dpzdtau(self, px, py, pz):
-        return (self.q/self.m) * (self.local_B[1] * px - self.local_B[0] * py)
+        return (self.q/self.m_kg) * (self.local_B[1] * px - self.local_B[0] * py)
 
     def update(self):
         # Update B field
@@ -251,9 +255,11 @@ class RKHorn:
     
         # use velocity to update position
         # x(t + dt) = x(t) + dt * v(t+dt)
-        self.x.append(self.x[-1] + self.dt * px_new)
-        self.y.append(self.y[-1] + self.dt * py_new)
-        self.z.append(self.z[-1] + self.dt * pz_new)
+        energy = sqrt(px_new**2 + py_new**2 + pz_new**2 + self.m**2)
+
+        self.x.append(self.x[-1] + self.dt * px_new * C_LIGHT*1e-2 / energy)
+        self.y.append(self.y[-1] + self.dt * py_new * C_LIGHT*1e-2 / energy)
+        self.z.append(self.z[-1] + self.dt * pz_new * C_LIGHT*1e-2 / energy)
 
     def set_new_particle(self, r0=[0.0, 0.0, 0.0], p0 =[0.0, 0.0, 10.0],
                          particle_mass=M_PI, charge=1.0):
@@ -263,13 +269,14 @@ class RKHorn:
         self.y = [r0[1]]
         self.z = [r0[2]]
         e0 = sqrt(p0[0]**2 + p0[1]**2 + p0[2]**2 + particle_mass**2)
-        self.px = [p0[0]*C_LIGHT*1e-2 / e0]  # convert velocities to m / s
-        self.py = [p0[1]*C_LIGHT*1e-2 / e0]
-        self.pz = [p0[2]*C_LIGHT*1e-2 / e0]
+        self.px = [p0[0]]  # convert velocities to m / s
+        self.py = [p0[1]]
+        self.pz = [p0[2]]
         self.local_B = np.array([0.0, 0.0, 0.0])
 
         self.q = charge * CHARGE_COULOMBS  # convert to coulombs
-        self.m = particle_mass / MEV_PER_KG  # convert to kg
+        self.m_kg = particle_mass / MEV_PER_KG  # convert to kg
+        self.m = particle_mass
 
     def simulate(self, stop_z=2.0, discard_history=False):
         self.is_alive = True
