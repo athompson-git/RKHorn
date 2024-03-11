@@ -31,7 +31,7 @@ The weights will be normalized to the number of protons-on-target (POT), ```n_po
 
 
 ### Plotting example (1)
-We can visualize the tracks of the simulated mesons as they transport through the horn system. Let's start by simulating a small number of mesons, just ```n_samples=20```:
+We can visualize the tracks of the simulated mesons as they transport through the horn system. Let's start by simulating a small number of mesons, just ```n_samples=20```, but keep the histories of each pion by using ```simulate_with_histories()``` instead of ```simulate()```, which returns a list of lists for the x, y, and z positions over time:
 ```
 rkhornsim2 = ChargedPionFluxMiniBooNE(proton_energy=8.0e3 + M_P, meson_charge=1.0,
                                      solid_angle_cut=0.00924, n_samples=20, n_pot=1,
@@ -71,3 +71,49 @@ plt.show()
 
 Giving us the following nice plot:
 ![Meson transport through the BNB focusing horn](./plots/horn_transport_visualization.png)
+
+Here we can see the pi+ tracks projected onto the y,z plane in blue. Their origins are always inside the BNB target inside the Horn boundary. We cut off the simulation either when their z values reach 3 meters, or when the time exceeds 10000 seconds or when the pion decays.
+
+### Plotting example 2
+
+We can visualize the statistics for many more pions by increasing the sample size to ```n_samples=50000```. This should take several seconds.
+
+```
+rkhornsim = ChargedPionFluxMiniBooNE(proton_energy=8.0e3 + M_P, meson_charge=1.0,
+                                     solid_angle_cut=0.00924, n_samples=50000, n_pot=1,
+                                     horn_current=300.0)
+
+
+rkhornsim.simulate()
+```
+
+The distributions can then be plotted with
+```
+
+pi_thetas_pre_horn = rkhornsim.meson_flux_pre_horn[:,1]
+pi_momenta_pre_horn = rkhornsim.meson_flux_pre_horn[:,0]
+pi_weights_pre_horn = rkhornsim.meson_flux_pre_horn[:,2]
+
+pi_thetas_post_horn = rkhornsim.pip_theta_post_horn
+pi_momenta_post_horn = rkhornsim.pip_p_post_horn
+pi_weights_post_horn = rkhornsim.pip_wgt_post_horn   # the number of pions that decayed pointing within detector solid angle
+
+print(pi_weights_post_horn, pi_weights_pre_horn)
+
+theta_bins = np.logspace(-4, np.log10(np.pi/4), 100)
+momentum_bins = np.logspace(1, np.log10(7000.0), 100)
+
+plt.hist(pi_thetas_post_horn, weights=pi_weights_post_horn, bins=theta_bins, histtype='step', color='b', density=False, label="Post-horn")
+plt.hist(pi_thetas_pre_horn, weights=pi_weights_pre_horn, bins=theta_bins, density=False, color='k', histtype='step', label="Pre-horn")
+plt.yscale('log')
+plt.ylabel(r"$\pi^+$/POT", fontsize=14)
+plt.xlabel(r"$\theta_\pi$ [rad]", fontsize=14)
+plt.xscale('log')
+plt.legend(loc="upper left")
+plt.show()
+```
+
+![Meson transport through the BNB focusing horn](./plots/pre_vs_post_horn_angles_nu-mode_300kA.png)
+![Meson transport through the BNB focusing horn](./plots/pre_vs_post_horn_momenta_nu-mode_300kA.png)
+
+This visualizes the effect of the focusing; the pions post-horn are now pointed to lower angles with respect to the beam line, and therefore their decay products (neutrinos) will have a higher flux within the detector solid angle downstream!
