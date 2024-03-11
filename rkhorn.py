@@ -101,8 +101,8 @@ class ChargedPionFluxMiniBooNE:
         r3 = norm.rvs(size=self.n_samples)
         r4 = norm.rvs(size=self.n_samples)
 
-        sigma_x = 1.51e-1  # cm
-        sigma_y = 0.75e-1  # cm
+        sigma_x = 1e-2 * 1.51e-1  # cm --> m
+        sigma_y = 1e-2 * 0.75e-1  # cm --> m
         sigma_theta_x = 0.66e-3  # mrad
         sigma_theta_y = 0.40e-3  # mrad
 
@@ -140,7 +140,6 @@ class ChargedPionFluxMiniBooNE:
         pi_plus_wgts = probability_decay * (2*pi*(theta_max-theta_min) * (p_max-p_min)) * self.n_pot * xs_wgt / self.n_samples / self.sigmap(self.p_proton)
         return np.array([p_list*1000.0, theta_list, pi_plus_wgts]).transpose()
 
-
     def focus_pions(self):
         self.pip_p_post_horn = []
         self.pip_theta_post_horn = []
@@ -165,15 +164,63 @@ class ChargedPionFluxMiniBooNE:
 
             self.pip_p_post_horn.append(p_final)
             self.pip_theta_post_horn.append(theta_final)
-            self.pip_wgt_post_horn.append(wgt*(self.z0[i] <= 0.71))
+            self.pip_wgt_post_horn.append(wgt)
             self.acceptance_wgt.append((self.z0[i] <= 0.71)*wgt*(theta_final < self.solid_angle_cut))
-    
+
     def simulate(self):
         self.simulate_beam_spot()
-        self.meson_flux_pre_horn = self.charged_meson_flux_mc(p_min=0.05, p_max=7.0,
-                                        theta_min=0.0, theta_max=np.pi/4)
+        self.meson_flux_pre_horn = self.charged_meson_flux_mc(p_min=0.01, p_max=6.5,
+                                        theta_min=0.0, theta_max=np.pi/2)
 
         self.focus_pions()
+    
+    def focus_pions_with_histories(self):
+        self.pip_p_post_horn = []
+        self.pip_theta_post_horn = []
+        self.pip_wgt_post_horn = []
+        self.acceptance_wgt = []
+        phis = np.random.uniform(0.0, 2*pi, self.n_samples)
+
+        x_histories = []
+        y_histories = []
+        z_histories = []
+
+        for i, pflux in enumerate(self.meson_flux_pre_horn):
+            p = pflux[0]
+            theta = pflux[1]
+            wgt = pflux[2]
+
+            print("Momentum is currently p={}".format(p))
+
+            
+            self.rksolver.set_new_particle(r0=[self.x0[i], self.y0[i], self.z0[i]],
+                                           p0=[p*cos(phis[i])*sin(theta), p*sin(phis[i])*sin(theta), p*cos(theta)],
+                                           charge=self.charge)
+            self.rksolver.simulate(discard_history=False)
+
+            p_final = sqrt(self.rksolver.px[-1]**2 + self.rksolver.py[-1]**2 + self.rksolver.pz[-1]**2)
+            theta_final = arccos(self.rksolver.pz[-1] / p_final)
+
+            self.pip_p_post_horn.append(p_final)
+            self.pip_theta_post_horn.append(theta_final)
+            self.pip_wgt_post_horn.append(wgt)
+            self.acceptance_wgt.append((self.z0[i] <= 0.71)*wgt*(theta_final < self.solid_angle_cut))
+
+            x_histories.append(self.rksolver.x)
+            y_histories.append(self.rksolver.y)
+            z_histories.append(self.rksolver.z)
+        
+        return x_histories, y_histories, z_histories
+    
+    def simulate_with_histories(self):
+        self.simulate_beam_spot()
+        self.meson_flux_pre_horn = self.charged_meson_flux_mc(p_min=0.01, p_max=6.5,
+                                        theta_min=0.0, theta_max=np.pi/2)
+        
+        x_hist, y_hist, z_hist = self.focus_pions_with_histories()
+
+        return x_hist, y_hist, z_hist
+
 
 
         
@@ -278,7 +325,7 @@ class RKHorn:
         self.m_kg = particle_mass / MEV_PER_KG  # convert to kg
         self.m = particle_mass
 
-    def simulate(self, stop_z=2.0, discard_history=False):
+    def simulate(self, stop_z=3.0, discard_history=False):
         self.is_alive = True
         while self.is_alive:
             self.update()
