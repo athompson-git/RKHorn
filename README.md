@@ -115,9 +115,18 @@ plt.show()
 
 ![Meson transport through the BNB focusing horn](./plots/pre_vs_post_horn_angles_nu-mode_300kA.png)
 
-This visualizes the effect of the focusing; the pions post-horn are now pointed to lower angles with respect to the beam line, and therefore their decay products (neutrinos) will have a higher flux within the detector solid angle downstream! Notice also that for angles below 1e-3 radians, these pions were created with angles that simply point down the target volume and never enter the magnetic field, so their initial and final angles are the same. We do not simulate the random walk as pions scatter through the target material.
+This visualizes the effect of the focusing; the pions post-horn are now pointed to lower angles with respect to the beam line, and therefore their decay products (neutrinos) will have a higher flux within the detector solid angle downstream! Notice also that for angles below 1e-3 radians, these pions were created with angles that simply point down the target volume and never enter the magnetic field, so their initial and final angles are the same. We do not simulate the random walk as pions scatter through the target material (yet).
 
 ![Meson transport through the BNB focusing horn](./plots/pre_vs_post_horn_momenta_nu-mode_300kA.png)
 
-Here we can also look at the pre-horn and post-horn momenta distribution. The post-horn momentta are softer, as expected. 
+Here we can also look at the pre-horn and post-horn momenta distribution. The post-horn momentta are softer, as expected.
+
+
+## TODO
+* adding pion scattering and absorption in material
+* implementing custom horn geometries
+* implementing alternative target materials
+* simulating decay positions
+
+## Implementing a custom horn geometry
 
