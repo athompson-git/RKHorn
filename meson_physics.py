@@ -39,7 +39,7 @@ def kaon_lifetime(p):
 
 
 # Sanford-Wang and Feynman scaling diff xs
-def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus"):
+def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_only=False):
     pB = p_proton
     mt = M_P
     # Sanford-Wang Parameterization
@@ -57,6 +57,7 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus"):
         prefactor = c1 * power(p, c2) * (1 - p/(pB - c9))
         exponential = exp(-c3*power(p,c4)/power(pB,c5) - c6*theta*(p-c7*pB*power(cos(theta),c8)))
         return prefactor * exponential
+    
     elif meson_type == "pi_minus":
         c1 = 213.7
         c2 = 0.9379
@@ -70,7 +71,24 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus"):
         prefactor = c1 * power(p, c2) * (1 - p/(pB - c9))
         exponential = exp(-c3*power(p,c4)/power(pB,c5) - c6*theta*(p-c7*pB*power(cos(theta),c8)))
         return prefactor * exponential
+    
     elif meson_type == "k_plus":
+        if sw_only:
+            # modified SW from 1110.0417
+            c1 = 14.89
+            c2 = 0.91
+            c3 = 12.80
+            c4 = 2.08
+            c5 = 2.65
+            c6 = 4.61
+            c7 = 0.26
+            c8 = 10.63
+            c9 = 2.04
+            #c1, c2, c3, c4, c5, c6, c7, c8, c9 = 1.20245,1.08, 2.15, 2.31,1.98,5.73,0.137,24.1, 1.0
+            prefactor = c1 * power(p, c2) * (1 - p/(pB - c9))
+            exponential = exp(-c3*power(p,c4)/power(pB,c5) - c6*theta*(p-c7*pB*power(cos(theta),c8)))
+            return prefactor * exponential
+    
         pT = p*sin(theta)
         pL = p*cos(theta)
         beta = pB / (mt*1e-3 + sqrt(pB**2 + (M_P*1e-3)**2))
@@ -88,6 +106,7 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus"):
         c7 = 1.51
         prefactor = c1 * p**2 / sqrt(p**2 + (M_K*1e-3)**2)
         return prefactor * (1 - xF) * exp(-c2*pT - c3*power(xF, c4) - c5*pT**2 - c7*power(pT*xF, c6))
+    
     elif meson_type == "k0S":
         c1 = 15.130
         c2 = 1.975
