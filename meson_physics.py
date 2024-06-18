@@ -74,7 +74,7 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_on
     
     elif meson_type == "k_plus":
         if sw_only:
-            # modified SW from 1110.0417
+        # modified SW from 1110.0417
             c1 = 14.89
             c2 = 0.91
             c3 = 12.80

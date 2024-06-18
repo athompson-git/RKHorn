@@ -94,7 +94,7 @@ class ChargedPionFluxMiniBooNE:
         self.acceptance_wgt = []
 
         self.rksolver = RKHorn(horn_current=horn_current, particle_mass=self.meson_mass,
-                               particle_charge=self.charge, step_size_ns=0.5)
+                               particle_charge=self.charge, step_size_ns=0.25)
         self.meson_flux_pre_horn = None
 
     def sigmap(self, p):
