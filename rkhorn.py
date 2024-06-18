@@ -7,6 +7,7 @@ import numpy as np
 from numpy import log, exp, pi, sqrt, power, sin, cos, arccos, heaviside
 from scipy.stats import norm, expon
 
+from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
@@ -54,7 +55,7 @@ def RungeKuttaCoupled(t, x, y, z, dt, dxdt, dydt, dzdt):
 
 class ChargedPionFluxMiniBooNE:
     def __init__(self, proton_energy=8000.0, meson_charge=1.0, solid_angle_cut=0.00924,
-                 n_samples=10000, n_pot=18.75e20, horn_current=170.0, meson_species="pi_plus", verbose=False):
+                 n_samples=10000, n_pot=18.75e20, horn_current=174.0, meson_species="pi_plus", verbose=False):
         self.n_samples = n_samples
         self.solid_angle_cut = solid_angle_cut
         self.charge = meson_charge
@@ -93,7 +94,7 @@ class ChargedPionFluxMiniBooNE:
         self.acceptance_wgt = []
 
         self.rksolver = RKHorn(horn_current=horn_current, particle_mass=self.meson_mass,
-                               particle_charge=self.charge, step_size_ns=0.1)
+                               particle_charge=self.charge, step_size_ns=0.5)
         self.meson_flux_pre_horn = None
 
     def sigmap(self, p):
@@ -146,7 +147,7 @@ class ChargedPionFluxMiniBooNE:
         pi_plus_wgts = probability_decay * (2*pi*(theta_max-theta_min) * (p_max-p_min)) * self.n_pot * xs_wgt / self.n_samples / self.sigmap(self.p_proton)
         return np.array([p_list*1000.0, theta_list, pi_plus_wgts]).transpose()
 
-    def focus_pions(self, discard_zeros=False):
+    def focus_pions(self, discard_zeros=False, verbose=False):
         self.pip_p_post_horn = []
         self.pip_theta_post_horn = []
         self.pip_wgt_post_horn = []
@@ -154,7 +155,7 @@ class ChargedPionFluxMiniBooNE:
         self.decay_positions = []
         self.decay_in_pipe_wgt = []
         phis = np.random.uniform(0.0, 2*pi, self.n_samples)
-        for i, pflux in enumerate(self.meson_flux_pre_horn):
+        for i, pflux in enumerate(tqdm(self.meson_flux_pre_horn)):
             p = pflux[0]
             theta = pflux[1]
             wgt = pflux[2]
@@ -170,13 +171,24 @@ class ChargedPionFluxMiniBooNE:
             # Handle the decays
             decay_in_vol = 1.0
             if self.rksolver.decay_pos is not None:
-                self.decay_positions.append(self.rksolver.decay_pos)
                 if self.rksolver.decay_pos[2] > 52.0:
                     decay_in_vol *= 0.0
                 if abs(self.rksolver.decay_pos[1]) > 0.5:
                     decay_in_vol *= 0.0
                 if abs(self.rksolver.decay_pos[0]) > 0.5:
                     decay_in_vol *= 0.0
+
+                if discard_zeros:
+                    if decay_in_vol < 1.0:
+                        continue
+                
+                self.decay_positions.append(self.rksolver.decay_pos)
+                self.decay_in_pipe_wgt.append(decay_in_vol)
+                self.pip_p_post_horn.append(p_final)
+                self.pip_theta_post_horn.append(theta_final)
+                self.pip_wgt_post_horn.append(wgt)
+                self.acceptance_wgt.append((self.z0[i] <= 0.71)*wgt*(theta_final < self.solid_angle_cut))
+
             else:
                 # project out current vector to the MC decay position
                 # (disregard edges of beam pipe?)
@@ -188,7 +200,6 @@ class ChargedPionFluxMiniBooNE:
                 rvec = np.array([self.rksolver.x[-1],self.rksolver.y[-1],self.rksolver.z[-1]])
 
                 projected_decay_pos = rvec + decay_length * uvec
-                self.decay_positions.append(projected_decay_pos)
 
                 # add outside beam pipe weight
                 # decay pipe: 50m + 2m horn
@@ -201,19 +212,21 @@ class ChargedPionFluxMiniBooNE:
                 if abs(projected_decay_pos[0]) > 5.0:
                     decay_in_vol *= 0.0
 
-            if discard_zeros:
-                if decay_in_vol <= 0.0:
-                    continue
-            
-            self.decay_in_pipe_wgt.append(decay_in_vol)
-            self.pip_p_post_horn.append(p_final)
-            self.pip_theta_post_horn.append(theta_final)
-            self.pip_wgt_post_horn.append(wgt)
-            self.acceptance_wgt.append((self.z0[i] <= 0.71)*wgt*(theta_final < self.solid_angle_cut))
+                if discard_zeros:
+                    if decay_in_vol < 1.0:
+                        continue
+                
+                self.decay_positions.append(projected_decay_pos)
+                self.decay_in_pipe_wgt.append(decay_in_vol)
+                self.pip_p_post_horn.append(p_final)
+                self.pip_theta_post_horn.append(theta_final)
+                self.pip_wgt_post_horn.append(wgt)
+                # checking remove (self.z0[i] <= 0.71)
+                self.acceptance_wgt.append(wgt*(theta_final < self.solid_angle_cut))
 
     def simulate(self, discard_zeros=False):
         self.simulate_beam_spot()
-        self.meson_flux_pre_horn = self.charged_meson_flux_mc(p_min=0.01, p_max=6.5,
+        self.meson_flux_pre_horn = self.charged_meson_flux_mc(p_min=0.01, p_max=7.5,
                                         theta_min=0.0, theta_max=np.pi/2)
 
         self.focus_pions(discard_zeros)
@@ -403,5 +416,3 @@ class RKHorn:
             if rnd_lifetime < self.dt:
                 self.is_alive = False
                 self.decay_pos = [self.x[-1], self.y[-1], self.z[-1]]
-
-
