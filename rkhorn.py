@@ -2,6 +2,7 @@
 
 from constants import *
 from meson_physics import *
+from bethe_bloch import *
 
 import numpy as np
 from numpy import log, exp, pi, sqrt, power, sin, cos, arccos, heaviside
@@ -55,7 +56,8 @@ def RungeKuttaCoupled(t, x, y, z, dt, dxdt, dydt, dzdt):
 
 class ChargedPionFluxMiniBooNE:
     def __init__(self, proton_energy=8000.0, meson_charge=1.0, solid_angle_cut=0.00924,
-                 n_samples=10000, n_pot=18.75e20, horn_current=174.0, meson_species="pi_plus", verbose=False):
+                 n_samples=10000, n_pot=18.75e20, horn_current=174.0, meson_species="pi_plus",
+                 step_size_ns=0.1, verbose=False):
         self.n_samples = n_samples
         self.solid_angle_cut = solid_angle_cut
         self.charge = meson_charge
@@ -94,7 +96,7 @@ class ChargedPionFluxMiniBooNE:
         self.acceptance_wgt = []
 
         self.rksolver = RKHorn(horn_current=horn_current, particle_mass=self.meson_mass,
-                               particle_charge=self.charge, step_size_ns=0.25)
+                               particle_charge=self.charge, step_size_ns=step_size_ns)
         self.meson_flux_pre_horn = None
 
     def sigmap(self, p):
@@ -142,7 +144,7 @@ class ChargedPionFluxMiniBooNE:
         p_list = np.random.uniform(p_min, p_max, self.n_samples)
         theta_list = np.random.uniform(theta_min, theta_max, self.n_samples)
 
-        xs_wgt = meson_production_d2SdpdOmega(p_list, theta_list, self.p_proton/1.0e3, meson_type=self.meson_type) * sin(theta_list)
+        xs_wgt = meson_production_d2SdpdOmega(p_list, theta_list, self.p_proton/1.0e3, meson_type=self.meson_type, sw_only=True) * sin(theta_list)
         probability_decay = p_decay(p_list*1.0e3, meson_mass, meson_lifetime, 50)
         pi_plus_wgts = probability_decay * (2*pi*(theta_max-theta_min) * (p_max-p_min)) * self.n_pot * xs_wgt / self.n_samples / self.sigmap(self.p_proton)
         return np.array([p_list*1000.0, theta_list, pi_plus_wgts]).transpose()
@@ -170,12 +172,10 @@ class ChargedPionFluxMiniBooNE:
 
             # Handle the decays
             decay_in_vol = 1.0
-            if self.rksolver.decay_pos is not None:
+            if self.rksolver.decay_pos is not None:  # if the decay already happened in the target
                 if self.rksolver.decay_pos[2] > 52.0:
                     decay_in_vol *= 0.0
-                if abs(self.rksolver.decay_pos[1]) > 0.5:
-                    decay_in_vol *= 0.0
-                if abs(self.rksolver.decay_pos[0]) > 0.5:
+                if sqrt(self.rksolver.decay_pos[0]**2 + self.rksolver.decay_pos[1]**2) > 0.5:  # if outide 1m diam decay pipe
                     decay_in_vol *= 0.0
 
                 if discard_zeros:
@@ -187,11 +187,10 @@ class ChargedPionFluxMiniBooNE:
                 self.pip_p_post_horn.append(p_final)
                 self.pip_theta_post_horn.append(theta_final)
                 self.pip_wgt_post_horn.append(wgt)
-                self.acceptance_wgt.append((self.z0[i] <= 0.71)*wgt*(theta_final < self.solid_angle_cut))
+                self.acceptance_wgt.append(wgt*(theta_final < self.solid_angle_cut))
 
             else:
                 # project out current vector to the MC decay position
-                # (disregard edges of beam pipe?)
                 decay_length = expon.rvs(scale=(p_final*PION_LIFETIME*0.01*C_LIGHT/self.meson_mass))
 
                 # get unit vector of current direction
@@ -200,16 +199,10 @@ class ChargedPionFluxMiniBooNE:
                 rvec = np.array([self.rksolver.x[-1],self.rksolver.y[-1],self.rksolver.z[-1]])
 
                 projected_decay_pos = rvec + decay_length * uvec
-
-                # add outside beam pipe weight
-                # decay pipe: 50m + 2m horn
-                # width of decay pipe = [-0.4,0.4] m??
                 
                 if projected_decay_pos[2] > 52.0:
                     decay_in_vol *= 0.0
-                if abs(projected_decay_pos[1]) > 5.0:
-                    decay_in_vol *= 0.0
-                if abs(projected_decay_pos[0]) > 5.0:
+                if sqrt(projected_decay_pos[0]**2 + projected_decay_pos[1]**2) > 0.5:  # if outide 1m diam decay pipe
                     decay_in_vol *= 0.0
 
                 if discard_zeros:
@@ -221,7 +214,6 @@ class ChargedPionFluxMiniBooNE:
                 self.pip_p_post_horn.append(p_final)
                 self.pip_theta_post_horn.append(theta_final)
                 self.pip_wgt_post_horn.append(wgt)
-                # checking remove (self.z0[i] <= 0.71)
                 self.acceptance_wgt.append(wgt*(theta_final < self.solid_angle_cut))
 
     def simulate(self, discard_zeros=False):
@@ -253,12 +245,12 @@ class ChargedPionFluxMiniBooNE:
             self.rksolver.simulate(discard_history=False)
 
             p_final = sqrt(self.rksolver.px[-1]**2 + self.rksolver.py[-1]**2 + self.rksolver.pz[-1]**2)
-            theta_final = arccos(self.rksolver.pz[-1] / p_final)
+            theta_final = arccos(self.rksolver.pz[-1] / p_final) if p_final > 0.0 else 0.0
 
             self.pip_p_post_horn.append(p_final)
             self.pip_theta_post_horn.append(theta_final)
             self.pip_wgt_post_horn.append(wgt)
-            self.acceptance_wgt.append((self.z0[i] <= 0.71)*wgt*(theta_final < self.solid_angle_cut))
+            self.acceptance_wgt.append(wgt)
 
             x_histories.append(self.rksolver.x)
             y_histories.append(self.rksolver.y)
@@ -329,7 +321,7 @@ class RKHorn:
         # takes in x, y, z in meters, returns in T
         r = np.sqrt(x**2 + y**2)
         theta = np.arctan2(y,x)
-        if r <= self.inner_radius(z) or r > self.horn_max_radius:  # minimum radius of horn
+        if (r <= self.inner_radius(z)) or (r > self.horn_max_radius):  # minimum radius of horn
             return np.array([0.0, 0.0, 0.0])
         if z > self.horn_end:
             return np.array([0.0, 0.0, 0.0])
@@ -351,8 +343,27 @@ class RKHorn:
         self.local_B = self.bfield(self.x[-1], self.y[-1], self.z[-1])
 
         # Update velocity
-        t_new, px_new, py_new, pz_new = RungeKuttaCoupled(self.t[-1], self.px[-1], self.py[-1], self.pz[-1],
-                                                            self.dt, self.dpxdtau, self.dpydtau, self.dpzdtau)
+        if (self.local_B[0] == 0.0) and (self.local_B[1] == 0.0) and (self.local_B[2] == 0.0):
+            t_new, px_new, py_new, pz_new = self.t[-1] + self.dt, self.px[-1], self.py[-1], self.pz[-1]
+        else:
+            t_new, px_new, py_new, pz_new = RungeKuttaCoupled(self.t[-1], self.px[-1], self.py[-1], self.pz[-1],
+                                                                self.dt, self.dpxdtau, self.dpydtau, self.dpzdtau)
+
+        # Check if in Target and apply Bethe-Bloch energy loss to the kinetic energy (KE)
+        energy = sqrt(px_new**2 + py_new**2 + pz_new**2 + self.m**2)
+        r = np.sqrt(self.x[-1]**2 + self.y[-1]**2)
+        
+        if (r < 2.2e-2) and (self.z[-1] < self.horn_end):
+            # Bethe-Bloch energy loss
+            p_new = sqrt(px_new**2 + py_new**2 + pz_new**2)
+            deltaE = abs(dEdx(beta=p_new/energy, gamma=energy/self.m, M=self.m, Z=4, A=9)*(p_new/energy)*C_LIGHT*self.dt)  # (MeV/cm) * (cm/s) * seconds
+
+            p_after_loss = sqrt(power(np.clip(energy - deltaE, a_min=self.m, a_max=np.inf), 2) - self.m**2)
+
+            px_new = (p_after_loss/p_new) * px_new
+            py_new = (p_after_loss/p_new) * py_new
+            pz_new = (p_after_loss/p_new) * pz_new        
+        
         self.px.append(px_new)
         self.py.append(py_new)
         self.pz.append(pz_new)
@@ -360,7 +371,6 @@ class RKHorn:
     
         # use velocity to update position
         # x(t + dt) = x(t) + dt * v(t+dt)
-        energy = sqrt(px_new**2 + py_new**2 + pz_new**2 + self.m**2)
 
         self.x.append(self.x[-1] + self.dt * px_new * C_LIGHT*1e-2 / energy)
         self.y.append(self.y[-1] + self.dt * py_new * C_LIGHT*1e-2 / energy)
@@ -410,6 +420,10 @@ class RKHorn:
             if self.z[-1] < 0.0:
                 # if we go backwards
                 self.is_alive = False
+            
+            if self.px[-1]**2 + self.py[-1]**2 + self.pz[-1]**2 <= 0.0:
+                self.is_alive = False
+                self.decay_pos = [self.x[-1], self.y[-1], self.z[-1]]
 
             u = np.random.uniform(0.0,1.0)
             rnd_lifetime = -np.log(1-u) * pion_lifetime(self.px[-1]**2 + self.py[-1]**2 + self.pz[-1]**2)
