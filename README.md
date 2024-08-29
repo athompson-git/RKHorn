@@ -2,7 +2,7 @@
 
 A lightweight python library for simulating proton beam-induced charged pion fluxes and their radiative transport through a magnetic horn focusing system.
 
-
+#### (Warning! Validation still in progress. Discrepancies in total flux normalization are now at a level of 50%. Use at your own risk!)
 
 ## Example Usage
 
