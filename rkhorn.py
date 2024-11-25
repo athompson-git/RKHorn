@@ -145,8 +145,8 @@ class ChargedPionFluxMiniBooNE:
         theta_list = np.random.uniform(theta_min, theta_max, self.n_samples)
 
         xs_wgt = meson_production_d2SdpdOmega(p_list, theta_list, self.p_proton/1.0e3, meson_type=self.meson_type, sw_only=True) * sin(theta_list)
-        probability_decay = p_decay(p_list*1.0e3, meson_mass, meson_lifetime, 50)
-        pi_plus_wgts = probability_decay * (2*pi*(theta_max-theta_min) * (p_max-p_min)) * self.n_pot * xs_wgt / self.n_samples / self.sigmap(self.p_proton)
+        #probability_decay = p_decay(p_list*1.0e3, meson_mass, meson_lifetime, 50)
+        pi_plus_wgts = (2*pi*(theta_max-theta_min) * (p_max-p_min)) * self.n_pot * xs_wgt / self.n_samples / self.sigmap(self.p_proton)
         return np.array([p_list*1000.0, theta_list, pi_plus_wgts]).transpose()
 
     def focus_pions(self, discard_zeros=False, verbose=False):
@@ -168,7 +168,7 @@ class ChargedPionFluxMiniBooNE:
             self.rksolver.simulate(discard_history=True)
 
             p_final = sqrt(self.rksolver.px[-1]**2 + self.rksolver.py[-1]**2 + self.rksolver.pz[-1]**2)
-            theta_final = arccos(self.rksolver.pz[-1] / p_final)
+            theta_final = arccos(self.rksolver.pz[-1] / p_final) if p_final > 0.0 else 0.0
 
             # Handle the decays
             decay_in_vol = 1.0
