@@ -2,11 +2,18 @@
 
 A lightweight python library for simulating proton beam-induced charged pion fluxes and their radiative transport through a magnetic horn focusing system.
 
-Contact the author: ```a.thompson@northwestern.edu'''
+Contact the author: a.thompson@northwestern.edu
 
 (Warning! Validation still in progress. Discrepancies in total neutrino flux normalization compared to MiniBooNE collaboration-reported fluxes are at a level of 50%)
 
 ## Example Usage
+
+There are two example files;
+* Validation tests of the neutrino flux are performed in validate_neutrino_flux.ipynb
+* See also example.ipynb for a closed notebook form of the following example
+
+
+#### Simple usage of ```rkhorn``` classes
 
 One calls the ChargedPionFluxMiniBooNE class to simulate the pi+ / pi- fluxes coming out of the BNB horn geometry. However, with this class the incomingg proton flux can be changed as well as the selected horn current in kilo-Amps;
 
@@ -132,3 +139,4 @@ Here we can also look at the pre-horn and post-horn momenta distribution. The po
 
 ## Implementing a custom horn geometry
 
+This feature is not yet implemented in a user-friendly way, but you may hack the file ```data/mb_horn_radius_by_z.txt``` which encodes the shape of the inner conductor of the horn as a function of z position.
