@@ -55,7 +55,7 @@ def RungeKuttaCoupled(t, x, y, z, dt, dxdt, dydt, dzdt):
 
 
 class ChargedPionFluxMiniBooNE:
-    def __init__(self, proton_energy=8000.0, meson_charge=1.0, solid_angle_cut=0.00924,
+    def __init__(self, proton_energy=8938.0, meson_charge=1.0, solid_angle_cut=0.00924,
                  n_samples=10000, n_pot=18.75e20, horn_current=174.0, meson_species="pi_plus",
                  step_size_ns=0.1, verbose=False):
         self.n_samples = n_samples
@@ -330,13 +330,13 @@ class RKHorn:
         return (MU0 * self.current / (2 * pi * r)) * np.array([-sin(theta), cos(theta), 0.0])
 
     def dpxdtau(self, px, py, pz):
-        return (self.q/self.m_kg) * (self.local_B[2] * py - self.local_B[1] * pz)
+        return (MEV_PER_KG*self.q/sqrt(px**2 + py**2 + pz**2 + self.m**2)) * (self.local_B[2] * py - self.local_B[1] * pz)
     
     def dpydtau(self, px, py, pz):
-        return (self.q/self.m_kg) * (-self.local_B[2] * px + self.local_B[0] * pz)
+        return (MEV_PER_KG*self.q/sqrt(px**2 + py**2 + pz**2 + self.m**2)) * (-self.local_B[2] * px + self.local_B[0] * pz)
     
     def dpzdtau(self, px, py, pz):
-        return (self.q/self.m_kg) * (self.local_B[1] * px - self.local_B[0] * py)
+        return (MEV_PER_KG*self.q/sqrt(px**2 + py**2 + pz**2 + self.m**2)) * (self.local_B[1] * px - self.local_B[0] * py)
 
     def update(self):
         # Update B field
