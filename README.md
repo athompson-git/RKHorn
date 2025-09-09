@@ -33,6 +33,15 @@ we have constrained the total momentum to remain $p$.
 Once we record these positions and momenta of the protons where they collide, we sample the distributions and weights of produced pions and kaons
 using the differential cross sections under the Sanford-Wang and Feynman-scaling approximations.
 
+Once the mesons are produced, we push their positions and momenta with a finite difference routine. This routine will depend on the meson's current position.
+if it resides within the target material, then there is no magnetic field influence, but the meson does lose energy according to the Bethe-Bloch energy loss
+per unit distance traveled, $dE/dx$. 
+
+If the meson instead resides within the magnetic field region described by $\vec{B}(r,z)$, then we push its momenta and positions according to the Lorentz
+force law,
+
+$$ \frac{dp_m}{dt} = \frac{q}{E_m} (\vec{p_m} \times \vec{B}) $$
+
 
 #### References:
 * [1] "A measurement of hadron production cross-sections for the simulation of accelerator neutrino beams and a search for muon neutrino to electron neutrino oscillations in the $\Delta m^2$ ~ 1 eV$^2$ region" David W. Schmitz, Thesis. [https://inspirehep.net/literature/791454](https://inspirehep.net/literature/791454)
