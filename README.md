@@ -14,21 +14,28 @@ The RKHorn classes implement a very basic set of approximations to model the cha
 * When the mesons are in the target, Bethe-Bloch energy loss is applied at each timestep
 * Each timestep update is governed by the Lorentz force law equation of motion, with an azimuthally symmetric magnetic field that is only non-zero between the inner and outer conductors of the horn
 
-Let's begin with the modeling of the proton beam spot. We take the gaussian profile of the beam spot on the face of the Be target from [1](####references); we simulate $(x_p,y_p,z_p)$ positions of the colliding proton beam of 8 GeV energy by drawing 
+Let's begin with the modeling of the proton beam spot. We take the gaussian profile of the beam spot on the face of the Be target from [1](####references); we simulate $(x_0,y_0,z_0)$ positions and momenta $(p_x,p_y,p_z)$ of the colliding proton beam of total momentum $p = \sqrt{(T_p + m_p)^2 - m_p^2} \simeq 8.9$ GeV,
+where $T_p = 8$ GeV kinetic energy, by drawing 
 
-$$ x_p ~ N(0,\sigma_{x}) $$
-$$ y_p ~ N(0, \sigma_{y}) $$
-$$ z_p ~ Expon(1/(\lambda)) $$
-$$ \theta_{x} ~ N(0, \sigma_{\theta_{x}}) $$
-$$ \theta_{y} ~ N(0, \sigma_{\theta_{y}}) $$
+$$ x_0 \sim N(0,\sigma_{x}) $$
+$$ y_0 \sim N(0, \sigma_{y}) $$
+$$ z_0 \sim Expon(\lambda) $$
+$$ p_x \sim p \times N(0, \sigma_{\theta_{x}}) $$
+$$ p_y \sim p \times N(0, \sigma_{\theta_{y}}) $$
+$$ p_z \sim \sqrt{p^2 - p_x^2 - p_y^2} $$
 
 where $\sigma_{x} = 0.151$ cm, $\sigma_{y} = 0.75$ cm, $\sigma_{\theta_{x}} = 0.66$ mrad, and $\sigma_{\theta_{y}} = 0.40$ mrad, describing the spatial and angular
 distribution of the beam spot. The $z_p$ depth into the target at which the proton scatters is determined from an exponential distribution defined by the
-mean free path $\lambda$ of the proton with energy of 8 GeV.
+mean free path $\lambda$ of the proton described by its total cross section and the Be density, $\lambda = 1/(n \sigma)$.
+In the above scheme, we have made some approximations, one for the angular distribution given that the angular spread is very small, and secondly,
+we have constrained the total momentum to remain $p$.
+
+Once we record these positions and momenta of the protons where they collide, we sample the distributions and weights of produced pions and kaons
+using the differential cross sections under the Sanford-Wang and Feynman-scaling approximations.
 
 
 #### References:
-* [1] "A measurement of hadron production cross-sections for the simulation of accelerator neutrino beams and a search for muon neutrino to electron neutrino oscillations in the $\Delta m^2$ ~ 1 eV$^2$ region" David W. Schmitz, Thesis. [https://www.osti.gov/biblio/935240](https://www.osti.gov/biblio/935240)
+* [1] "A measurement of hadron production cross-sections for the simulation of accelerator neutrino beams and a search for muon neutrino to electron neutrino oscillations in the $\Delta m^2$ ~ 1 eV$^2$ region" David W. Schmitz, Thesis. [https://inspirehep.net/literature/791454](https://inspirehep.net/literature/791454)
 * [2] "Improved Parameterization of K+ Production in p-Be Collisions at Low Energy Using Feynman Scaling" Mariani, Cheng, Conrad, Shaevitz [Phys.Rev.D 84 (2011) 114021] [https://arxiv.org/abs/1110.0417v2](https://arxiv.org/abs/1110.0417v2)
 * [3] "Neutrino flux prediction at MiniBooNE" (MiniBooNE Collaboration) [PRD 79, 072002 (2009)] [https://arxiv.org/abs/0806.1449](https://arxiv.org/abs/0806.1449) 
 
