@@ -6,18 +6,31 @@ A lightweight python library for simulating proton beam-induced charged pion flu
 
 Contact the author: a.thompson@northwestern.edu
 
-#### Summary:
-The RKHorn classes implement a very basic set of approximations to model the charged meson fluxes produced at the Booster Neutrino Beam (BNB) target and horn system, with a future possibility of modeling other target and horn systems. There are three main pieces to this model:
+### How it works:
+The RKHorn classes implement a very basic set of approximations to model the charged meson fluxes produced at the Booster Neutrino Beam (BNB) target and horn system, with a future possibility of modeling other target and horn systems. There are several main pieces to this model:
 * We use the Sanford-Wang (SW) parameterization of the pion ($\pi^+ / \pi^-$) production cross section from 8 GeV protons on beryllium
 * Similarly, we implement the Feynman-Scaling (FS) parameterizations for charged Kaon production
 * The charged mesons are propagated through the target and horn according to simple equations of motion solved by Runge-Kutta finite timestep propagation
 * When the mesons are in the target, Bethe-Bloch energy loss is applied at each timestep
 * Each timestep update is governed by the Lorentz force law equation of motion, with an azimuthally symmetric magnetic field that is only non-zero between the inner and outer conductors of the horn
 
-References:
-* "Improved Parameterization of K+ Production in p-Be Collisions at Low Energy Using Feynman Scaling" Mariani, Cheng, Conrad, Shaevitz [Phys.Rev.D 84 (2011) 114021] [https://arxiv.org/abs/1110.0417v2](https://arxiv.org/abs/1110.0417v2)
-* "Neutrino flux prediction at MiniBooNE" (MiniBooNE Collaboration) [PRD 79, 072002 (2009)] [https://arxiv.org/abs/0806.1449](https://arxiv.org/abs/0806.1449)
-* "A measurement of hadron production cross-sections for the simulation of accelerator neutrino beams and a search for muon neutrino to electron neutrino oscillations in the $\Delta m^2$ ~ 1 eV$^2$ region" David W. Schmitz, Thesis. [https://www.osti.gov/biblio/935240](https://www.osti.gov/biblio/935240)
+Let's begin with the modeling of the proton beam spot. We take the gaussian profile of the beam spot on the face of the Be target from [1](####references); we simulate $(x_p,y_p,z_p)$ positions of the colliding proton beam of 8 GeV energy by drawing 
+
+$$ x_p ~ N(0,\sigma_{x}) $$
+$$ y_p ~ N(0, \sigma_{y}) $$
+$$ z_p ~ Expon(1/(\lambda)) $$
+$$ \theta_{x} ~ N(0, \sigma_{\theta_{x}}) $$
+$$ \theta_{y} ~ N(0, \sigma_{\theta_{y}}) $$
+
+where $\sigma_{x} = 0.151$ cm, $\sigma_{y} = 0.75$ cm, $\sigma_{\theta_{x}} = 0.66$ mrad, and $\sigma_{\theta_{y}} = 0.40$ mrad, describing the spatial and angular
+distribution of the beam spot. The $z_p$ depth into the target at which the proton scatters is determined from an exponential distribution defined by the
+mean free path $\lambda$ of the proton with energy of 8 GeV.
+
+
+#### References:
+* [1] "A measurement of hadron production cross-sections for the simulation of accelerator neutrino beams and a search for muon neutrino to electron neutrino oscillations in the $\Delta m^2$ ~ 1 eV$^2$ region" David W. Schmitz, Thesis. [https://www.osti.gov/biblio/935240](https://www.osti.gov/biblio/935240)
+* [2] "Improved Parameterization of K+ Production in p-Be Collisions at Low Energy Using Feynman Scaling" Mariani, Cheng, Conrad, Shaevitz [Phys.Rev.D 84 (2011) 114021] [https://arxiv.org/abs/1110.0417v2](https://arxiv.org/abs/1110.0417v2)
+* [3] "Neutrino flux prediction at MiniBooNE" (MiniBooNE Collaboration) [PRD 79, 072002 (2009)] [https://arxiv.org/abs/0806.1449](https://arxiv.org/abs/0806.1449) 
 
 ## Example Usage
 
