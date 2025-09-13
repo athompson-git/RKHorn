@@ -9,9 +9,7 @@ from numpy import log, exp, pi, sqrt, power, sin, cos, arccos, heaviside
 from scipy.stats import norm, expon
 
 from tqdm import tqdm
-
-import matplotlib.pyplot as plt
-
+import pkg_resources
 
 # All units converted internally to:
 # seconds
@@ -309,7 +307,9 @@ class RKHorn:
         self.m_kg = particle_mass / MEV_PER_KG  # convert to kg
         self.current = horn_current * 1000.0  # convert to Amps
 
-        self.horn_radius_by_z = np.genfromtxt(horn_geometry_file)
+        fpath = pkg_resources.resource_filename(__name__,
+                                                horn_geometry_file)
+        self.horn_radius_by_z = np.genfromtxt(fpath)
         self.horn_start = 0.0  # meters
         self.horn_end = max(1e-2*self.horn_radius_by_z[:,0])  # meters
         self.horn_max_radius = horn_outer_radius
@@ -329,6 +329,7 @@ class RKHorn:
             return np.array([0.0, 0.0, 0.0])
         return (MU0 * self.current / (2 * pi * r)) * np.array([-sin(theta), cos(theta), 0.0])
 
+    # Momentum definitions, returning in units of MeV/s
     def dpxdtau(self, px, py, pz):
         return (MEV_PER_KG*self.q/sqrt(px**2 + py**2 + pz**2 + self.m**2)) * (self.local_B[2] * py - self.local_B[1] * pz)
     
