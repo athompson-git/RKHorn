@@ -6,6 +6,15 @@ A lightweight python library for simulating proton beam-induced charged pion flu
 
 Contact the author: a.thompson@northwestern.edu
 
+#### Requirements
+* python 3.7 or later
+* matplotlib 3.10.6
+* numpy 2.3.3
+* scipy 1.16.2
+* setuptools 75.8.2
+* tqdm 4.67.1
+
+
 ### How it works:
 The RKHorn classes implement a very basic set of approximations to model the charged meson fluxes produced at the Booster Neutrino Beam (BNB) target and horn system, with a future possibility of modeling other target and horn systems. There are several main pieces to this model:
 * We use the Sanford-Wang (SW) parameterization of the pion ($\pi^+ / \pi^-$) production cross section from 8 GeV protons on beryllium
