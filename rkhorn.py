@@ -3,6 +3,7 @@
 from constants import *
 from meson_physics import *
 from bethe_bloch import *
+from kinematics import *
 
 import numpy as np
 from numpy import log, exp, pi, sqrt, power, sin, cos, arccos, heaviside
@@ -431,3 +432,121 @@ class RKHorn:
             if rnd_lifetime < self.dt:
                 self.is_alive = False
                 self.decay_pos = [self.x[-1], self.y[-1], self.z[-1]]
+
+
+
+
+class ChargedMesonNeutrinoFlux:
+    """
+    Simulates the neutrino flux from charged mesons produced in the RKHorn.
+    """
+    def __init__(self, meson_flux, meson_type="pion", m_lepton=M_MU, energy_cut=140.0, n_samples=1):
+        self.meson_flux = meson_flux
+        if meson_type == "pion":
+            self.mm = M_PI
+            self.ckm = V_UD
+            self.fM = F_PI
+            self.total_width = PION_WIDTH
+        elif meson_type == "kaon":
+            self.mm = M_K
+            self.ckm = V_US
+            self.fM = F_K
+            self.total_width = KAON_WIDTH
+        else:
+            raise Exception("Meson type not understood!", meson_type)
+        self.m_lepton = m_lepton
+        self.det_dist = 541
+        self.dump_dist = 50
+        self.det_length = 12
+        self.solid_angles = []
+        self.energy_cut = energy_cut
+        self.nsamples = n_samples
+        self.energies = []
+        self.cosines = []
+        self.decay_pos = []
+        self.weights = []
+    
+    def partial_width(self):
+        return np.clip((G_F*self.fM*self.m_lepton*self.ckm)**2 * self.mm * (1-(self.m_lepton/self.mm)**2)**2 / (8*pi), a_min=0.0, a_max=np.inf)
+    
+    def br(self):
+        return self.partial_width()/self.total_width
+
+    def simulate_neutrinos(self):
+        M_M = self.mm
+
+        # Reproduce the neutrino flux abundance
+        p_k = self.meson_flux[:,0]
+        wgt_k = self.meson_flux[:,2]
+
+        theta_rnd = arccos(1 - 2*np.random.ranf(self.nsamples))
+        c_rnd = cos(theta_rnd)
+        e_nu = (M_M**2 - M_MU**2)/(2*M_M)
+        p_nu_z = e_nu * c_rnd
+
+        beta = p_k / sqrt(p_k**2 + M_M**2)
+        gamma = np.power(1-beta**2, -0.5)
+        e_nu_lab = gamma*(e_nu + beta*p_nu_z)
+        p_nu_z_lab = gamma*(p_nu_z + beta*e_nu)
+        cos_lab = p_nu_z_lab / e_nu_lab
+
+        # TODO: simulate decay position
+        decay_l = METER_BY_MEV * p_k / self.partial_width() / self.mm
+        u = []
+        for l in decay_l:
+            umax = exp(-2*self.dump_dist/l) * power(exp(self.dump_dist/l) - 1, 2) \
+                if l > 1.0 else 1.0
+            u.append(np.random.uniform(0.0, min(umax, 1.0)))
+        
+        x = decay_quantile(np.array(u), p_k, self.mm, self.partial_width())
+        
+        # Append decay positions and solid angle cosines for the geometric acceptance of each meson decay
+        self.decay_pos.append(x)
+        solid_angle_cosine = cos(arctan(self.det_length/(self.det_dist-x)/2))
+
+        wgt_nu = self.br() * wgt_k * heaviside(cos_lab - solid_angle_cosine, 0.0)  * (2 * (max(e_nu_lab)-min(e_nu_lab)))
+        return e_nu_lab, wgt_nu
+    
+    def simulate_neutrinos_from_decayed_flux(self):
+        self.energies = []
+        self.cosines = []
+        self.decay_pos = []
+        self.weights = []
+
+        det_vector = np.array([0,0,self.det_dist])
+
+        meson_p4 = LorentzVector(self.mm, 0.0, 0.0, 0.0)
+        mc = Decay2Body(p_parent=LorentzVector(self.mm, 0.0, 0.0, 0.0), m1=0.0, m2=self.m_lepton, n_samples=self.nsamples)
+        phis = np.random.uniform(0.0, 2*pi, self.meson_flux.shape[0]*self.nsamples)
+
+        for i, m in tqdm(enumerate(self.meson_flux)):
+            p_m = m[0]
+            theta_m = m[1]
+            x = m[2]
+            y = m[3]
+            z = m[4]
+
+            flux_wgt = m[6]
+
+            meson_p4.set_p4(sqrt(p_m**2 + self.mm**2), p_m*sin(theta_m)*cos(phis[i]),
+                                                        p_m*sin(theta_m)*sin(phis[i]),
+                                                        p_m*cos(theta_m))
+            mc.set_new_decay(meson_p4, 0.0, self.m_lepton)
+            mc.decay()
+
+            nu_p4s = mc.p1_lab_4vectors
+
+            for nu_p4 in nu_p4s:
+                # determine the dot product between the neutrino production position vector and the detector vector
+                lnu = det_vector - np.array([x,y,z])
+                dist_to_det = np.sqrt(np.sum(lnu*lnu))
+                pnu = np.array([nu_p4.p1, nu_p4.p2, nu_p4.p3])
+                theta_nu_det = arccos(np.dot(lnu, pnu)/(nu_p4.momentum()*dist_to_det))
+
+                self.energies.append(nu_p4.energy())
+                self.cosines.append(nu_p4.cosine())
+                self.weights.append(flux_wgt*heaviside(self.det_length/dist_to_det - theta_nu_det, 0.0)/self.nsamples)
+
+            
+        
+        return np.array(self.energies), np.array(self.weights)
