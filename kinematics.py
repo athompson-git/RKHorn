@@ -3,7 +3,9 @@ Lorentz vector and vector classes, monte carlo methods for decays, boost method
 """
 
 import numpy as np
-from numpy import pi, sqrt, power, sin, cos, arccos, arctan2
+from numpy import pi, sqrt, power, sin, cos, arccos, arctan2, log, arctan
+
+from constants import *
 
 
 
@@ -253,3 +255,14 @@ def lorentz_boost(momentum: LorentzVector, v: Vector3):
                     [-gamma*beta*n[2], (gamma-1)*n[2]*n[0], (gamma-1)*n[2]*n[1], 1+(gamma-1)*n[2]*n[2]]])
     boosted_p4 = mat @ momentum.pmu
     return LorentzVector(boosted_p4[0], boosted_p4[1], boosted_p4[2], boosted_p4[3])
+
+
+
+
+def decay_quantile(u, p, m, width_gamma):
+    # Quantile/PPF function to generate decay positions for a given lifetime and momentum.
+    # momentum in lab frame p
+    # decay width width_gamma in MeV
+    # mass of decaying particle m
+    # l and dl in meters
+    return (METER_BY_MEV * p / width_gamma / m) * log((sqrt(u) + 1)/(1 - u))
