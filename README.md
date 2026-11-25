@@ -73,8 +73,8 @@ This is the function ```forced_detector_flux```.
 ## Example Usage
 
 There are two example files;
-* Validation of the neutrino flux against the published MiniBooNE flux [3] is performed by ```python validate_flux.py``` (see "Validation" below)
-* See also jupyter/example.ipynb for a closed notebook form of the following example
+* Validation of the neutrino flux against the published MiniBooNE flux [3] is performed by ```python tests/validate_flux.py``` (see "Validation" below)
+* See also jupyter/example.ipynb for a notebook walk-through of the following example
 
 
 #### Simple usage of ```rkhorn``` classes
@@ -210,10 +210,34 @@ Here we can also look at the pre-horn and post-horn momenta distribution. The po
 
 ```
 python tests/test_physics.py     # hand-checkable physics tests (field, kicks, energy loss, decay, cross sections, flux)
-python validate_flux.py          # neutrino flux at MiniBooNE vs the published flux, bin by bin
+python tests/validate_flux.py          # neutrino flux at MiniBooNE vs the published flux, bin by bin
 ```
 
-```validate_flux.py``` compares the $\nu_\mu$ flux from $\pi^+$ (neutrino mode) and the $\bar{\nu}_\mu$ flux from $\pi^-$ (antineutrino mode) with the curves digitized from [3] (in ```data/public_digitized_fluxes```; these are the pion components of the published flux, Figs. 29 and 31 of [3]). The current level of agreement and the list of effects that are not modeled are in [PHYSICS_LEDGER.md](../agent_review/PHYSICS_LEDGER.md).
+```tests/validate_flux.py``` compares the $\nu_\mu$ flux from $\pi^+$ (neutrino mode) and the $\bar{\nu}_\mu$ flux from $\pi^-$ (antineutrino mode) with the curves digitized from [3] (in ```data/public_digitized_fluxes```; these are the pion components of the published flux, Figs. 29 and 31 of [3]). The current level of agreement and the list of effects that are not modeled are in [PHYSICS_LEDGER.md](../agent_review/PHYSICS_LEDGER.md).
+
+## Saved meson samples
+
+```
+python simulate_miniboone_meson_fluxes.py                                   # pi+, K+ at +174 kA and pi- at -174 kA
+python simulate_miniboone_meson_fluxes.py --species pi_plus --horn-current 0   # horn off
+python simulate_miniboone_meson_fluxes.py --format both                     # also rewrite the text tables
+```
+
+```simulate_miniboone_meson_fluxes.py``` only writes data. By default it simulates 150000 mesons per species and saves one pickle per sample in ```data/pickle```. A pickle holds, for every simulated meson, the production point, momentum, angle and weight, the same quantities at decay, the decay position, and a flag for decays in the open beamline. Because the mesons themselves are stored, decay products for any detector or decay channel can be computed afterwards without tracking again, and the production model can be varied by reweighting. Read a pickle with ```flux_io.load_meson_pickle``` and convert it to the eight-column table used by ```forced_detector_flux``` with ```flux_io.flux_array```.
+
+The text tables in ```data/``` (decays in the open beamline only, eight columns) are still written by ```--format txt``` or ```--format both```, and by ```python tests/validate_flux.py --save```.
+
+| Folder | Contents |
+|---|---|
+| ```data/``` | horn profile, text tables of decayed mesons |
+| ```data/pickle``` | full meson samples, about 9 MB each |
+| ```data/tracks``` | a few pion trajectories for the 3D figure |
+| ```data/systematics``` | flux uncertainty envelopes from ```systematics.py``` |
+| ```data/bsm_data``` | new-physics fluxes from ```new_physics.py``` |
+| ```data/public_digitized_fluxes``` | published MiniBooNE fluxes |
+| ```plots/paper``` | figures saved by ```jupyter/paper_plots.ipynb``` |
+
+Notebooks in ```jupyter/```: ```example.ipynb``` is a walk-through of the code, ```plot_fluxes.ipynb``` has quick-look plots of the saved samples, and ```paper_plots.ipynb``` makes and saves the figures of the paper. The last two only read saved data.
 
 ## TODO
 * secondary meson production by re-interacting protons and neutrons (about 8-10% of the $\nu_\mu$ flux)
