@@ -16,6 +16,8 @@ from numpy import log, exp, pi, sqrt, power, sin, cos, arccos, heaviside
 from scipy.stats import norm, expon
 
 from tqdm import tqdm
+from bisect import bisect_right
+import math
 import os
 
 # All units converted internally to:
@@ -435,6 +437,8 @@ class RKHorn:
 
         fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), horn_geometry_file)
         self.horn_radius_by_z = np.genfromtxt(fpath)
+        self.horn_z = (1e-2*self.horn_radius_by_z[:,0]).tolist()
+        self.horn_r = (1e-2*self.horn_radius_by_z[:,1]).tolist()
         self.horn_start = 0.0  # meters
         self.horn_end = max(1e-2*self.horn_radius_by_z[:,0])  # meters
         self.horn_max_radius = horn_outer_radius
@@ -442,11 +446,25 @@ class RKHorn:
     def inner_radius(self, z):
         return np.interp(z, 1e-2*self.horn_radius_by_z[:,0], 1e-2*self.horn_radius_by_z[:,1])
 
+    def inner_radius_scalar(self, z: float) -> float:
+        """Conductor radius at one position, as inner_radius.
+
+        Args:
+            z: Position along the beam in meters.
+        """
+        zs, rs = self.horn_z, self.horn_r
+        if z <= zs[0]:
+            return rs[0]
+        if z >= zs[-1]:
+            return rs[-1]
+        i = bisect_right(zs, z)
+        return (rs[i] - rs[i-1])/(zs[i] - zs[i-1])*(z - zs[i-1]) + rs[i-1]
+
     def material_at(self, r, z):
         if (r < self.target_radius) and (0.0 <= z <= self.target_length):
             return BERYLLIUM
         if self.horn_start <= z <= self.horn_end:
-            r_conductor = self.inner_radius(z)
+            r_conductor = self.inner_radius_scalar(z)
             if r_conductor - self.conductor_thickness <= r <= r_conductor:
                 return ALUMINUM
         return None
@@ -470,17 +488,17 @@ class RKHorn:
 
     def bfield(self, x, y, z):
         # takes in x, y, z in meters, returns in T
-        r = np.sqrt(x**2 + y**2)
-        theta = np.arctan2(y,x)
-        r_outer = self.inner_radius(z)
-        if (r <= r_outer - self.conductor_thickness) or (r > self.horn_max_radius):  # minimum radius of horn
-            return np.array([0.0, 0.0, 0.0])
         if z > self.horn_end:
             return np.array([0.0, 0.0, 0.0])
         if z < self.horn_start:
             return np.array([0.0, 0.0, 0.0])
+        r = math.sqrt(x**2 + y**2)
+        r_outer = self.inner_radius_scalar(z)
+        if (r <= r_outer - self.conductor_thickness) or (r > self.horn_max_radius):  # minimum radius of horn
+            return np.array([0.0, 0.0, 0.0])
         current = self.current * self.enclosed_current_fraction(r, r_outer)
-        return (MU0 * current / (2 * pi * r)) * np.array([-sin(theta), cos(theta), 0.0])
+        strength = MU0 * current / (2 * pi * r)
+        return np.array([-strength*y/r, strength*x/r, 0.0])
 
     # Momentum definitions, returning in units of MeV/s
     def dpxdtau(self, px, py, pz):
@@ -492,9 +510,39 @@ class RKHorn:
     def dpzdtau(self, px, py, pz):
         return (MEV_PER_KG*self.q/sqrt(px**2 + py**2 + pz**2 + self.m**2)) * (self.local_b[1] * px - self.local_b[0] * py)
 
+    def runge_kutta_step(self, px: float, py: float, pz: float,
+                         b_x: float, b_y: float, b_z: float) -> tuple:
+        """Fourth-order step of the momentum in a fixed field.
+
+        Args:
+            px: Momentum component in MeV.
+            py: Momentum component in MeV.
+            pz: Momentum component in MeV.
+            b_x: Field component in tesla.
+            b_y: Field component in tesla.
+            b_z: Field component in tesla.
+
+        Returns:
+            The three momentum components after one time step.
+        """
+        dt, mass_sq, charge = self.dt, self.m**2, MEV_PER_KG*self.q
+        steps = []
+        qx, qy, qz = px, py, pz
+        for fraction in (0.5, 0.5, 1.0, 0.0):
+            k = charge/math.sqrt(qx**2 + qy**2 + qz**2 + mass_sq)
+            step = (dt*(k*(b_z*qy - b_y*qz)), dt*(k*(-b_z*qx + b_x*qz)),
+                    dt*(k*(b_y*qx - b_x*qy)))
+            steps.append(step)
+            qx, qy, qz = (px + fraction*step[0], py + fraction*step[1],
+                          pz + fraction*step[2])
+        (i1, k1, h1), (i2, k2, h2), (i3, k3, h3), (i4, k4, h4) = steps
+        return (px + 1./6.*(i1 + 2*i2 + 2*i3 + i4),
+                py + 1./6.*(k1 + 2*k2 + 2*k3 + k4),
+                pz + 1./6.*(h1 + 2*h2 + 2*h3 + h4))
+
     def update(self):
         px, py, pz = self.px[-1], self.py[-1], self.pz[-1]
-        energy = sqrt(px**2 + py**2 + pz**2 + self.m**2)
+        energy = math.sqrt(px**2 + py**2 + pz**2 + self.m**2)
         half_step = 0.5 * self.dt * C_LIGHT*1e-2
         x_mid = self.x[-1] + half_step * px / energy
         y_mid = self.y[-1] + half_step * py / energy
@@ -502,21 +550,22 @@ class RKHorn:
 
         # Update B field
         self.local_b = self.bfield(x_mid, y_mid, z_mid)
+        b_x, b_y, b_z = float(self.local_b[0]), float(self.local_b[1]), float(self.local_b[2])
 
         # Update momentum
-        if (self.local_b[0] == 0.0) and (self.local_b[1] == 0.0) and (self.local_b[2] == 0.0):
-            t_new, px_new, py_new, pz_new = self.t[-1] + self.dt, px, py, pz
+        t_new = self.t[-1] + self.dt
+        if (b_x == 0.0) and (b_y == 0.0) and (b_z == 0.0):
+            px_new, py_new, pz_new = px, py, pz
         else:
-            t_new, px_new, py_new, pz_new = runge_kutta_coupled(self.t[-1], px, py, pz,
-                                                                self.dt, self.dpxdtau, self.dpydtau, self.dpzdtau)
+            px_new, py_new, pz_new = self.runge_kutta_step(px, py, pz, b_x, b_y, b_z)
 
         # Check if in material and apply Bethe-Bloch energy loss to the kinetic energy (KE)
-        energy = sqrt(px_new**2 + py_new**2 + pz_new**2 + self.m**2)
-        r = np.sqrt(x_mid**2 + y_mid**2)
+        energy = math.sqrt(px_new**2 + py_new**2 + pz_new**2 + self.m**2)
+        r = math.sqrt(x_mid**2 + y_mid**2)
 
         material = self.material_at(r, z_mid)
         if material is not None:
-            p_new = sqrt(px_new**2 + py_new**2 + pz_new**2)
+            p_new = math.sqrt(px_new**2 + py_new**2 + pz_new**2)
             step_cm = (p_new/energy)*C_LIGHT*self.dt  # (cm/s) * seconds
 
             if self.absorption is not None and p_new > 0.0:
@@ -529,12 +578,12 @@ class RKHorn:
                               rho=material["rho"], Imin=material["I"],
                               delta=density_effect(p_new/self.m, material))*step_cm)  # (MeV/cm) * cm
 
-            p_after_loss = sqrt(power(np.clip(energy - delta_e, a_min=self.m, a_max=np.inf), 2) - self.m**2)
+            p_after_loss = math.sqrt(max(float(energy - delta_e), self.m)**2 - self.m**2)
 
             px_new = (p_after_loss/p_new) * px_new
             py_new = (p_after_loss/p_new) * py_new
             pz_new = (p_after_loss/p_new) * pz_new
-            energy = sqrt(p_after_loss**2 + self.m**2)
+            energy = math.sqrt(p_after_loss**2 + self.m**2)
 
         self.px.append(px_new)
         self.py.append(py_new)
@@ -560,13 +609,13 @@ class RKHorn:
         self.n_steps = 0
         self.proper_time_left = np.random.exponential(self.tau) if proper_time is None else proper_time
         self.t = [0.0]
-        self.x = [r0[0]]
-        self.y = [r0[1]]
-        self.z = [r0[2]]
+        self.x = [float(r0[0])]
+        self.y = [float(r0[1])]
+        self.z = [float(r0[2])]
         e0 = sqrt(p0[0]**2 + p0[1]**2 + p0[2]**2 + particle_mass**2)
-        self.px = [p0[0]]
-        self.py = [p0[1]]
-        self.pz = [p0[2]]
+        self.px = [float(p0[0])]
+        self.py = [float(p0[1])]
+        self.pz = [float(p0[2])]
         self.local_b = np.array([0.0, 0.0, 0.0])
 
         self.q = charge * CHARGE_COULOMBS  # convert to coulombs
@@ -605,7 +654,7 @@ class RKHorn:
                 self.decay_pos = [self.x[-1], self.y[-1], self.z[-1]]
                 self.captured = self.q < 0.0
 
-            p_now = sqrt(self.px[-1]**2 + self.py[-1]**2 + self.pz[-1]**2)
+            p_now = math.sqrt(self.px[-1]**2 + self.py[-1]**2 + self.pz[-1]**2)
             self.proper_time_left -= self.dt * self.tau / lab_lifetime(p_now, self.m, self.tau)
             if self.proper_time_left < 0.0:
                 self.is_alive = False
