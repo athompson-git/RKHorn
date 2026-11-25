@@ -1,7 +1,9 @@
 try:
     from .constants import *
+    from .bethe_bloch import ALUMINUM, BERYLLIUM
 except ImportError:
     from constants import *
+    from bethe_bloch import ALUMINUM, BERYLLIUM
 
 import numpy as np
 from numpy import log, exp, pi, sqrt, power, sin, cos, arccos, heaviside
@@ -79,6 +81,25 @@ def pion_nucleus_xs(p, charge=1, material="Be", kind="ine"):
     return np.maximum(resonance + 0.5*(1 + np.tanh(thetas*(p - theta0))) * (a + b*power(p, n) + c*log(p)**2), 0.0)
 
 
+def pion_air_xs(p: float, charge: int = 1, kind: str = "ine") -> float:
+    """Pion cross section on an air nucleus in mb.
+
+    Args:
+        p: Momentum in GeV.
+        charge: Sign of the pion charge.
+        kind: "ine", "qel" or "prod", as in pion_nucleus_xs.
+
+    Returns:
+        Power law in mass number through the Be and Al values.
+    """
+    sigma_be = pion_nucleus_xs(p, charge, "Be", kind)
+    sigma_al = pion_nucleus_xs(p, charge, "Al", kind)
+    exponent = (log(AIR_MASS_NUMBER/BERYLLIUM["A"])
+                / log(ALUMINUM["A"]/BERYLLIUM["A"]))
+    ratio = sigma_al / np.where(sigma_be > 0.0, sigma_be, 1.0)
+    return np.where(sigma_be > 0.0, sigma_be*power(ratio, exponent), 0.0)
+
+
 
 
 # Sanford-Wang and Feynman scaling diff xs
@@ -129,7 +150,7 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_on
             c5 = 2.65
             c6 = 4.61
             c7 = 0.26
-            c8 = 10.63
+            c8 = 106.3
             c9 = 2.04
             if params is not None:
                 c1, c2, c3, c4, c5, c6, c7, c8, c9 = params
