@@ -19,9 +19,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import numpy as np
 
 from constants import *
-from bethe_bloch import dEdx, BERYLLIUM
-from meson_physics import proton_be_xs, pion_nucleus_xs, meson_production_d2SdpdOmega, lab_lifetime
-from rkhorn import RKHorn, ChargedPionFluxMiniBooNE, ChargedMesonNeutrinoFlux, forced_detector_flux
+from bethe_bloch import dEdx, density_effect, ALUMINUM, BERYLLIUM
+from meson_physics import proton_be_xs, pion_nucleus_xs, pion_air_xs, meson_production_d2SdpdOmega, lab_lifetime
+from rkhorn import RKHorn, ChargedPionFluxMiniBooNE, ChargedMesonNeutrinoFlux, forced_detector_flux, disc_averaged_flux
 
 P_BEAM = 8.89
 E_BEAM = np.sqrt((1e3*P_BEAM)**2 + M_P**2)
@@ -57,6 +57,12 @@ def test_pion_cross_sections_match_figures():
 def test_kaon_feynman_scaling_table():
     for p, theta, expected in [(1.52, 0.213, 9.37), (2.80, 0.106, 8.67), (4.30, 0.055, 4.73)]:
         close(meson_production_d2SdpdOmega(p, theta, P_BEAM, "k_plus"), expected, 0.01)
+
+
+def test_modified_sanford_wang_kaon_table():
+    table = [(1.52, 0.213, 4.25), (2.07, 0.127, 8.99), (2.45, 0.103, 9.91), (2.80, 0.106, 7.73), (4.30, 0.055, 5.24)]
+    for p, theta, expected in table:
+        close(meson_production_d2SdpdOmega(p, theta, P_BEAM, "k_plus", sw_only=True), expected, 0.03)
 
 
 def test_cross_sections_never_negative():
@@ -98,6 +104,26 @@ def test_field_strength_and_region():
     assert not np.any(rk.bfield(0.10, 0.0, 2.5))
 
 
+def test_skin_effect_current_fraction():
+    rk = RKHorn(horn_current=174.0)
+    r_outer, wall, depth = rk.inner_radius(0.5), rk.conductor_thickness, rk.skin_depth
+    radii = np.linspace(r_outer - wall, r_outer, 2001)
+    fractions = np.array([rk.enclosed_current_fraction(r, r_outer) for r in radii])
+    assert fractions[0] == 0.0
+    close(fractions[-1], 1.0, 1e-12)
+    assert np.all(np.diff(fractions) > 0.0)
+    density = radii*np.exp((radii - r_outer)/depth)
+    enclosed = np.concatenate([[0.0], np.cumsum(0.5*(density[1:] + density[:-1])*np.diff(radii))])
+    close(fractions[1000], enclosed[1000]/enclosed[-1], 1e-5)
+
+    b_surface = rk.bfield(r_outer, 0.0, 0.5)
+    close(np.sqrt(np.sum(b_surface**2)), 2e-7*174e3/r_outer, 1e-9)
+    assert np.any(rk.bfield(r_outer - 0.5*wall, 0.0, 0.5))
+    assert not np.any(rk.bfield(r_outer - 1.5*wall, 0.0, 0.5))
+    no_skin = RKHorn(horn_current=174.0, skin_depth=None)
+    assert not np.any(no_skin.bfield(r_outer - 0.5*wall, 0.0, 0.5))
+
+
 def test_gyroradius_in_uniform_field():
     p, b_field, n_steps = 1000.0, 1.0, 200
     rk = free_tracker(step_size_ns=0.02)
@@ -136,10 +162,12 @@ def test_step_size_convergence():
 
 
 def test_bethe_bloch_minimum():
-    beta_gamma = 3.5
+    beta_gamma = np.logspace(0.2, 1.0, 400)
     gamma = np.sqrt(1 + beta_gamma**2)
-    value = dEdx(beta=beta_gamma/gamma, gamma=gamma, M=M_PI, Z=4, A=9.012)
-    assert 2.95 <= value <= 3.15, value
+    for material, tabulated in [(BERYLLIUM, 1.595), (ALUMINUM, 1.615)]:
+        loss = dEdx(beta=beta_gamma/gamma, gamma=gamma, M=M_MU, Z=material["Z"], A=material["A"],
+                    rho=material["rho"], Imin=material["I"], delta=density_effect(beta_gamma, material))
+        close(np.min(loss)/material["rho"], tabulated, 0.003)
 
 
 def test_energy_loss_and_absorption_along_target():
@@ -151,7 +179,8 @@ def test_energy_loss_and_absorption_along_target():
         rk.update()
     e0 = np.sqrt(p0**2 + M_PI**2)
     loss = e0 - np.sqrt(rk.pz[-1]**2 + M_PI**2)
-    close(loss, dEdx(beta=p0/e0, gamma=e0/M_PI, M=M_PI, Z=4, A=9.012) * 100*length, 0.02)
+    close(loss, dEdx(beta=p0/e0, gamma=e0/M_PI, M=M_PI, Z=4, A=9.012,
+                     delta=density_effect(p0/M_PI, BERYLLIUM)) * 100*length, 0.02)
     n_be = AVOGADRO * BERYLLIUM["rho"] / BERYLLIUM["A"]
     close(rk.optical_depth, n_be * pion_nucleus_xs(p0/1e3, +1, "Be", "prod")*1e-27 * 100*length, 0.02)
 
@@ -182,6 +211,63 @@ def test_decay_volume_geometry():
     off_axis = np.array([0.32, 0.0, 2.0])
     assert sim.in_decay_volume(np.array([0.32, 0.0, 30.0]), off_axis, axis) == 0.0
     assert sim.in_decay_volume(np.array([0.32, 0.0, 2.3]), off_axis, axis) == 1.0
+
+
+def test_decay_volume_rejects_upstream_decays():
+    sim = ChargedPionFluxMiniBooNE(proton_energy=E_BEAM, n_samples=1, n_pot=1)
+    assert sim.in_decay_volume(np.array([0.0, 0.0, -1.0])) == 0.0
+    assert sim.in_decay_volume(np.array([0.0, 0.0, 1.0])) == 1.0
+
+
+def test_stopped_negative_pion_is_captured():
+    for species, flag in [("pi_minus", 0.0), ("pi_plus", 1.0)]:
+        np.random.seed(2)
+        sim = ChargedPionFluxMiniBooNE(proton_energy=E_BEAM, meson_species=species, n_samples=1, n_pot=1,
+                                       horn_current=0.0, absorption=None)
+        sim.x0, sim.y0, sim.z0 = np.zeros(1), np.zeros(1), np.array([0.1])
+        sim.meson_flux_pre_horn = np.array([[30.0, 0.0, 1.0]])
+        with contextlib.redirect_stderr(io.StringIO()):
+            sim.focus_pions()
+        assert sim.pip_p_post_horn[0] == 0.0
+        assert sim.decay_in_pipe_wgt[0] == flag, (species, sim.decay_in_pipe_wgt)
+
+
+def test_air_cross_section_and_attenuation():
+    p = np.array([0.5, 1.0, 2.0, 4.0])
+    for charge in [+1, -1]:
+        be, al = pion_nucleus_xs(p, charge, "Be", "prod"), pion_nucleus_xs(p, charge, "Al", "prod")
+        air = pion_air_xs(p, charge, "prod")
+        assert np.all((air > be) & (air < al))
+        slope = np.log(al/be)/np.log(ALUMINUM["A"]/BERYLLIUM["A"])
+        assert np.all((slope[1:] > 0.55) & (slope[1:] < 0.90)), slope
+        assert np.allclose(np.log(air/be)/np.log(AIR_MASS_NUMBER/BERYLLIUM["A"]), slope, rtol=1e-9)
+
+    sim = ChargedPionFluxMiniBooNE(proton_energy=E_BEAM, n_samples=1, n_pot=1)
+    interaction_length = 30.0/sim.air_optical_depth(2000.0, 30.0)
+    assert 600.0 < interaction_length < 1100.0, interaction_length
+    close(sim.air_optical_depth(2000.0, 30.0), 2*sim.air_optical_depth(2000.0, 15.0), 1e-12)
+    vacuum = ChargedPionFluxMiniBooNE(proton_energy=E_BEAM, n_samples=1, n_pot=1, air=False)
+    assert vacuum.air_optical_depth(2000.0, 30.0) == 0.0
+    kaon = ChargedPionFluxMiniBooNE(proton_energy=E_BEAM, meson_species="k_plus", n_samples=1, n_pot=1)
+    close(kaon.air_optical_depth(2000.0, 30.0), KAON_TO_PION_XS*sim.air_optical_depth(2000.0, 30.0), 1e-12)
+
+
+def test_flux_ignores_decays_outside_the_volume():
+    mesons = np.array([[2000.0, 0.0, 0.0, 0.0, 41.0, 1.0, 1.0, 0.0],
+                       [2000.0, 0.0, 0.0, 0.0, 41.0, 0.0, 1.0, 0.0]])
+    _, flux = forced_detector_flux(mesons, m_meson=M_PI, br=1.0)
+    assert flux[0] > 0.0 and flux[1] == 0.0
+
+
+def test_disc_average_reduces_to_point_flux():
+    mesons = np.array([[2000.0, 0.01, 0.2, 0.1, 41.0, 1.0, 1.0, 0.3]])
+    e_point, flux_point = forced_detector_flux(mesons, m_meson=M_PI, br=1.0, det_pos=(0.0, 1.9, 541.0))
+    e_disc, flux_disc = disc_averaged_flux(mesons, m_meson=M_PI, br=1.0, radius=0.0, n_points=1)
+    close(e_disc[0], e_point[0], 1e-12)
+    close(flux_disc[0], flux_point[0], 1e-12)
+    _, coarse = disc_averaged_flux(mesons, m_meson=M_PI, br=1.0, n_points=32)
+    _, fine = disc_averaged_flux(mesons, m_meson=M_PI, br=1.0, n_points=512)
+    close(np.sum(coarse), np.sum(fine), 0.01)
 
 
 def test_forced_detector_flux_on_axis():

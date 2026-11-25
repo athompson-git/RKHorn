@@ -5,6 +5,7 @@ Reproducible comparison of the RKHorn neutrino flux at MiniBooNE with the publis
     python tests/validate_flux.py                 # default statistics, fixed seed
     python tests/validate_flux.py --n 200000      # more statistics
     python tests/validate_flux.py --plot          # also draw the comparison
+    python tests/validate_flux.py --on-axis       # flux at one point on the beam axis
     python tests/validate_flux.py --n 500000 --theta-max 1.5708 --save   # regenerate the files in data/
 
 Neutrino mode:      nu_mu    from pi+ (and, separately, K+), horn current +174 kA
@@ -12,6 +13,8 @@ Antineutrino mode:  nu_mubar from pi-,                       horn current -174 k
 
 Everything is in nu / POT / cm^2. The simulated flux is histogrammed in 50 MeV bins and the
 published curve is integrated over the same bins, so the two are compared bin for bin.
+The published flux counts neutrinos that cross a disc of radius 6.106 m at 541 m, centered
+1.9 m off the beam axis, so the simulated flux is averaged over the same disc.
 """
 
 import argparse
@@ -39,8 +42,8 @@ BANDS = [(0, 500), (500, 1000), (1000, 1500), (1500, 2000), (2000, 3000)]
 
 
 def run_species(args):
-    species, horn_current, n_samples, seed, step_ns, theta_max, absorption, save = args
-    from rkhorn import ChargedPionFluxMiniBooNE, forced_detector_flux
+    species, horn_current, n_samples, seed, step_ns, theta_max, absorption, save, on_axis = args
+    from rkhorn import ChargedPionFluxMiniBooNE, disc_averaged_flux, forced_detector_flux
     from constants import M_P, M_PI, M_K, BR_PI_MUNU, BR_K_MUNU
 
     np.random.seed(seed)
@@ -57,16 +60,34 @@ def run_species(args):
                    header="horn-focused {} per POT, horn current {} kA, {} mesons sampled; columns: ".format(
                               species, horn_current, n_samples)
                           + "p[MeV] theta[rad] decay_x[m] decay_y[m] decay_z[m] decay_in_volume weight[1/POT] phi[rad]")
+    flux_at_detector = forced_detector_flux if on_axis else disc_averaged_flux
     if species.startswith("k"):
-        e_nu, w_nu = forced_detector_flux(mesons, m_meson=M_K, br=BR_K_MUNU)
+        e_nu, w_nu = flux_at_detector(mesons, m_meson=M_K, br=BR_K_MUNU)
     else:
-        e_nu, w_nu = forced_detector_flux(mesons, m_meson=M_PI, br=BR_PI_MUNU)
+        e_nu, w_nu = flux_at_detector(mesons, m_meson=M_PI, br=BR_PI_MUNU)
 
-    hist, _ = np.histogram(e_nu, weights=w_nu, bins=BIN_EDGES)
-    hist_sq, _ = np.histogram(e_nu, weights=w_nu**2, bins=BIN_EDGES)
+    hist, hist_sq, total, total_sq = meson_histograms(e_nu, w_nu, mesons.shape[0])
     produced = np.sum(sim.meson_flux_pre_horn[:,2])
     stopped = np.sum(mesons[mesons[:,0] <= 0.0, 6])
-    return species, hist, hist_sq, produced, np.sum(mesons[:,6]), stopped
+    return species, hist, hist_sq, produced, np.sum(mesons[:,6]), stopped, total, total_sq
+
+
+def meson_histograms(e_nu, w_nu, n_mesons):
+    """Flux per bin and its squared error, counted per meson.
+
+    Args:
+        e_nu: Neutrino energies in MeV, in blocks of n_mesons.
+        w_nu: Flux weights, in the same order.
+        n_mesons: Number of mesons in each block.
+
+    Returns:
+        Flux and squared error per bin, then both for all energies.
+    """
+    rows = np.tile(np.arange(n_mesons), e_nu.shape[0] // n_mesons)
+    row_edges = np.arange(n_mesons + 1) - 0.5
+    per_meson, _, _ = np.histogram2d(rows, e_nu, bins=[row_edges, BIN_EDGES], weights=w_nu)
+    totals = np.bincount(rows, weights=w_nu, minlength=n_mesons)
+    return per_meson.sum(axis=0), (per_meson**2).sum(axis=0), totals.sum(), (totals**2).sum()
 
 
 def published_per_bin(filename):
@@ -107,21 +128,25 @@ def main():
     parser.add_argument("--absorption", default="reaction", choices=["reaction", "inelastic", "none"],
                         help="hadronic absorption of mesons in the target and horn")
     parser.add_argument("--save", action="store_true", help="overwrite the meson flux files in data/")
+    parser.add_argument("--on-axis", action="store_true",
+                        help="take the flux at one point on the beam axis, not averaged over the detector disc")
     parser.add_argument("--plot", action="store_true")
     opts = parser.parse_args()
 
     absorption = None if opts.absorption == "none" else opts.absorption
-    jobs = [("pi_plus", 174.0, opts.n, opts.seed, opts.step_ns, opts.theta_max, absorption, opts.save),
-            ("k_plus", 174.0, opts.n, opts.seed + 1, opts.step_ns, opts.theta_max, absorption, opts.save),
-            ("pi_minus", -174.0, opts.n, opts.seed + 2, opts.step_ns, opts.theta_max, absorption, opts.save)]
+    common = (opts.step_ns, opts.theta_max, absorption, opts.save, opts.on_axis)
+    jobs = [("pi_plus", 174.0, opts.n, opts.seed) + common,
+            ("k_plus", 174.0, opts.n, opts.seed + 1) + common,
+            ("pi_minus", -174.0, opts.n, opts.seed + 2) + common]
     with Pool(3) as pool:
         results = {r[0]: r[1:] for r in pool.map(run_species, jobs)}
 
-    print("n = {} per species, seed = {}, step = {} ns, theta_max = {} rad, absorption = {}"
-          .format(opts.n, opts.seed, opts.step_ns, opts.theta_max, opts.absorption))
+    print("n = {} per species, seed = {}, step = {} ns, theta_max = {} rad, absorption = {}, flux {}"
+          .format(opts.n, opts.seed, opts.step_ns, opts.theta_max, opts.absorption,
+                  "at a point on the beam axis" if opts.on_axis else "averaged over the detector disc"))
     print("\nmesons per POT   produced(sampled range)   decayed in volume   of which stopped")
     for species in ["pi_plus", "k_plus", "pi_minus"]:
-        _, _, produced, decayed, stopped = results[species]
+        produced, decayed, stopped = results[species][2:5]
         print("  {:9s}      {:.4f}                  {:.4f}              {:.4f}".format(species, produced, decayed, stopped))
 
     ref_numu = published_per_bin("numu_diff_flux_by_POT_GeV_cm2.txt")
@@ -134,8 +159,11 @@ def main():
 
     kaon, kaon_sq = results["k_plus"][0], results["k_plus"][1]
     print("\nnu_mu from K+ -> mu nu, neutrino mode")
-    print("  integrated 0-3 GeV: RKHorn {:.3e} +- {:.1e}   paper {:.3e} (2.65% of the nu_mu total, all energies)"
-          .format(np.sum(kaon), np.sqrt(np.sum(kaon_sq)), 0.0265*PUBLISHED_TOTAL["numu"]))
+    kaon_total, kaon_total_sq = results["k_plus"][5], results["k_plus"][6]
+    print("  all energies:       RKHorn {:.3e} +- {:.1e}   paper {:.3e} (2.65% of the nu_mu total)"
+          .format(kaon_total, np.sqrt(kaon_total_sq), 0.0265*PUBLISHED_TOTAL["numu"]))
+    print("  the paper's number includes three-body K+ decays, which RKHorn does not model")
+    print("  of which 0-3 GeV:   RKHorn {:.3e} +- {:.1e}".format(np.sum(kaon), np.sqrt(np.sum(kaon_sq))))
     sel = (BIN_EDGES[:-1] >= 1000) & (BIN_EDGES[1:] <= 3000)
     print("  mean flux 1-3 GeV:  RKHorn {:.2e} /GeV   paper roughly 4e-12 /GeV (read off Fig. 29)"
           .format(np.sum(kaon[sel])/2.0))
