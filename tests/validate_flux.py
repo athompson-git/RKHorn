@@ -2,10 +2,10 @@
 Reproducible comparison of the RKHorn neutrino flux at MiniBooNE with the published flux
 (MiniBooNE, PRD 79, 072002; digitized curves in data/public_digitized_fluxes).
 
-    python validate_flux.py                 # default statistics, fixed seed
-    python validate_flux.py --n 200000      # more statistics
-    python validate_flux.py --plot          # also draw the comparison
-    python validate_flux.py --n 500000 --theta-max 1.5708 --save   # regenerate the files in data/
+    python tests/validate_flux.py                 # default statistics, fixed seed
+    python tests/validate_flux.py --n 200000      # more statistics
+    python tests/validate_flux.py --plot          # also draw the comparison
+    python tests/validate_flux.py --n 500000 --theta-max 1.5708 --save   # regenerate the files in data/
 
 Neutrino mode:      nu_mu    from pi+ (and, separately, K+), horn current +174 kA
 Antineutrino mode:  nu_mubar from pi-,                       horn current -174 kA
@@ -18,11 +18,14 @@ import argparse
 import contextlib
 import io
 import os
+import sys
 from multiprocessing import Pool
 
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, ROOT)
 
 PUBLISHED_TOTAL = {"numu": 5.19e-10, "numubar": 2.93e-10}
 
@@ -50,7 +53,7 @@ def run_species(args):
 
     mesons = sim.decayed_flux_array()
     if save:
-        np.savetxt(os.path.join(HERE, "data", DATA_FILES[species]), mesons, fmt="%.6e",
+        np.savetxt(os.path.join(ROOT, "data", DATA_FILES[species]), mesons, fmt="%.6e",
                    header="horn-focused {} per POT, horn current {} kA, {} mesons sampled; columns: ".format(
                               species, horn_current, n_samples)
                           + "p[MeV] theta[rad] decay_x[m] decay_y[m] decay_z[m] decay_in_volume weight[1/POT] phi[rad]")
@@ -67,7 +70,7 @@ def run_species(args):
 
 
 def published_per_bin(filename):
-    data = np.genfromtxt(os.path.join(HERE, "data", "public_digitized_fluxes", filename))
+    data = np.genfromtxt(os.path.join(ROOT, "data", "public_digitized_fluxes", filename))
     data = data[np.argsort(data[:,0])]
     out = np.zeros(BIN_EDGES.shape[0] - 1)
     for i in range(out.shape[0]):

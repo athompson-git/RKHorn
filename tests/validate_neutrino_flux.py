@@ -8,8 +8,11 @@ from matplotlib.pylab import rc
 rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
 rc('text', usetex=True)
 
+import os
 import sys
-sys.path.append("../")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+sys.path.append(os.path.dirname(ROOT))
 from alplib.charged_meson_3body import *
 from rkhorn import *
 
@@ -20,8 +23,8 @@ k_plus_flux = charged_meson_flux_mc("k_plus", 0.75, 6.5, 0.0, 0.4, n_samples=nsa
 pi_plus_flux = charged_meson_flux_mc("pi_plus", 0.0, 6.5, 0.03, 0.21, n_samples=nsamples, n_pot=0.3)
 
 # import RKHorn-generated pion flux
-rkhorn_pion_data = np.genfromtxt("data/bnb_focused_piplus_flux_rkhorn_1POT_v2.txt")
-rkhorn_kaon_data = np.genfromtxt("data/bnb_focused_Kplus_flux_rkhorn_1POT.txt")
+rkhorn_pion_data = np.genfromtxt(ROOT + "/data/bnb_focused_piplus_flux_rkhorn_1POT_v2.txt")
+rkhorn_kaon_data = np.genfromtxt(ROOT + "/data/bnb_focused_Kplus_flux_rkhorn_1POT.txt")
 
 # columns: pi_momenta_post_horn, pi_thetas_post_horn, decay_x, decay_y, decay_z, decay_wgts, pi_weights_post_horn
 # create minimal array for ChargedMesonNeutrinoFlux
@@ -161,8 +164,8 @@ print("Sum of weights RKHorn = {}".format(np.sum(nu_pi_wgts_rk)))
 print("Sum of weights SW truncated = {}".format(np.sum(nu_pi_wgts)))
 
 # Import the neutrino fluxes to compare
-nu_pi_dat = np.genfromtxt("data/MiniBooNE_numu_from_pion_per_POT_per50MeV.txt")
-nu_k_dat = np.genfromtxt("data/MiniBooNE_numu_from_Kaon_per_POT_per50MeV.txt")
+nu_pi_dat = np.genfromtxt(ROOT + "/data/MiniBooNE_numu_from_pion_per_POT_per50MeV.txt")
+nu_k_dat = np.genfromtxt(ROOT + "/data/MiniBooNE_numu_from_Kaon_per_POT_per50MeV.txt")
 nu_pi_dat[:,0] *= 1e3
 nu_k_dat[:,0] *= 1e3
 
