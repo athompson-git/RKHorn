@@ -7,7 +7,7 @@ A lightweight python library for simulating proton beam-induced charged pion flu
 Contact the author: a.thompson@northwestern.edu
 
 #### Requirements
-* python 3.7 or later
+* python 3.11 or later
 * matplotlib 3.10.6
 * numpy 2.3.3
 * scipy 1.16.2
@@ -18,10 +18,15 @@ Contact the author: a.thompson@northwestern.edu
 ### How it works:
 The RKHorn classes implement a very basic set of approximations to model the charged meson fluxes produced at the Booster Neutrino Beam (BNB) target and horn system, with a future possibility of modeling other target and horn systems. There are several main pieces to this model:
 * We use the Sanford-Wang (SW) parameterization of the pion ($\pi^+ / \pi^-$) production cross section from 8 GeV protons on beryllium
-* Similarly, we implement the Feynman-Scaling (FS) parameterizations for charged Kaon production
+* Similarly, we implement the Feynman-Scaling (FS) parameterization for $K^+$ production (a modified SW fit is also available)
+* The meson yield per proton-on-target is (probability that the proton has a reaction in the 71.1 cm target) $\times$ (meson production cross section) / (p-Be reaction cross section), where "reaction" means inelastic excluding quasi-elastic, 177.5 mb at 8.89 GeV/c
 * The charged mesons are propagated through the target and horn according to simple equations of motion solved by Runge-Kutta finite timestep propagation
-* When the mesons are in the target, Bethe-Bloch energy loss is applied at each timestep
+* When the mesons are in material (the beryllium target, 0.48 cm in radius, or the aluminum inner conductor of the horn), Bethe-Bloch energy loss is applied at each timestep and the meson weight is reduced by its probability of a hadronic interaction, $\exp(-n \sigma \ell)$
 * Each timestep update is governed by the Lorentz force law equation of motion, with an azimuthally symmetric magnetic field that is only non-zero between the inner and outer conductors of the horn
+* Mesons decay in flight with their own lifetime, inside the horn or downstream of it. A decay counts if it happens before the beam stop (50 m), inside the decay pipe (3 ft radius), and the meson cleared the collimator
+* The neutrino flux at the detector is computed analytically from each decayed meson (see below)
+
+Every physics choice, its reference, and its measured effect on the flux is recorded in [PHYSICS_LEDGER.md](../agent_review/PHYSICS_LEDGER.md).
 
 Let's begin with the modeling of the proton beam spot. We take the gaussian profile of the beam spot on the face of the Be target from [1](####references); we simulate $(x_0,y_0,z_0)$ positions and momenta $(p_x,p_y,p_z)$ of the colliding proton beam of total momentum $p = \sqrt{(T_p + m_p)^2 - m_p^2} \simeq 8.9$ GeV,
 where $T_p = 8$ GeV kinetic energy, by drawing 
@@ -33,9 +38,9 @@ $$ p_x \sim p \times N(0, \sigma_{\theta_{x}}) $$
 $$ p_y \sim p \times N(0, \sigma_{\theta_{y}}) $$
 $$ p_z \sim \sqrt{p^2 - p_x^2 - p_y^2} $$
 
-where $\sigma_{x} = 0.151$ cm, $\sigma_{y} = 0.75$ cm, $\sigma_{\theta_{x}} = 0.66$ mrad, and $\sigma_{\theta_{y}} = 0.40$ mrad, describing the spatial and angular
-distribution of the beam spot. The $z_p$ depth into the target at which the proton scatters is determined from an exponential distribution defined by the
-mean free path $\lambda$ of the proton described by its total cross section and the Be density, $\lambda = 1/(n \sigma)$.
+where $\sigma_{x} = 0.151$ cm, $\sigma_{y} = 0.075$ cm, $\sigma_{\theta_{x}} = 0.66$ mrad, and $\sigma_{\theta_{y}} = 0.40$ mrad, describing the spatial and angular
+distribution of the beam spot. The depth $z_0$ into the target at which the proton reacts is drawn from an exponential distribution, restricted to the length
+of the target, with the mean free path $\lambda = 1/(n \sigma) \simeq 45.6$ cm given by the p-Be reaction cross section and the Be density.
 In the above scheme, we have made some approximations, one for the angular distribution given that the angular spread is very small, and secondly,
 we have constrained the total momentum to remain $p$.
 
@@ -44,12 +49,20 @@ using the differential cross sections under the Sanford-Wang and Feynman-scaling
 
 Once the mesons are produced, we push their positions and momenta with a finite difference routine. This routine will depend on the meson's current position.
 if it resides within the target material, then there is no magnetic field influence, but the meson does lose energy according to the Bethe-Bloch energy loss
-per unit distance traveled, $dE/dx$. 
+per unit distance traveled, $dE/dx$, and it may be absorbed: each step of length $\ell$ in material multiplies its weight by $\exp(-n \sigma \ell)$, with the
+pion-nucleus cross sections of [3]. 
 
 If the meson instead resides within the magnetic field region described by $\vec{B}(r,z)$, then we push its momenta and positions according to the Lorentz
 force law,
 
 $$ \frac{dp_m}{dt} = \frac{q}{E_m} (\vec{p_m} \times \vec{B}) $$
+
+Finally, each decayed meson contributes to the neutrino flux at the detector without any rejection sampling. For a two-body decay $M \to \mu \nu$ of a meson
+with velocity $\beta$ and Lorentz factor $\gamma$, at an angle $\alpha$ to the line from the decay point to the detector a distance $L$ away,
+
+$$ E_\nu = \frac{E^*}{\gamma (1 - \beta \cos\alpha)}, \qquad \Phi = \frac{\mathrm{BR}}{4 \pi L^2} \frac{1}{\gamma^2 (1 - \beta \cos\alpha)^2}, \qquad E^* = \frac{m_M^2 - m_\mu^2}{2 m_M} $$
+
+This is the function ```forced_detector_flux```.
 
 
 #### References:
@@ -60,42 +73,54 @@ $$ \frac{dp_m}{dt} = \frac{q}{E_m} (\vec{p_m} \times \vec{B}) $$
 ## Example Usage
 
 There are two example files;
-* Validation tests of the neutrino flux are performed in validate_neutrino_flux.ipynb
-* See also example.ipynb for a closed notebook form of the following example
+* Validation of the neutrino flux against the published MiniBooNE flux [3] is performed by ```python validate_flux.py``` (see "Validation" below)
+* See also jupyter/example.ipynb for a closed notebook form of the following example
 
 
 #### Simple usage of ```rkhorn``` classes
 
-One calls the ChargedPionFluxMiniBooNE class to simulate the pi+ / pi- fluxes coming out of the BNB horn geometry. However, with this class the incomingg proton flux can be changed as well as the selected horn current in kilo-Amps;
+One calls the ChargedPionFluxMiniBooNE class to simulate the pi+ / pi- / K+ fluxes coming out of the BNB horn geometry. However, with this class the incoming proton energy can be changed as well as the selected horn current in kilo-Amps. Run the examples from inside this directory;
 
-```
-import rkhorn
-from rkhorn import ChargedPionFluxMiniBooNE
+```python
+import matplotlib.pyplot as plt
+import numpy as np
 
-rkhornsim = ChargedPionFluxMiniBooNE(proton_energy=8.0e3 + M_P, meson_charge=1.0,
-                                     solid_angle_cut=0.00924, n_samples=50000, n_pot=1,
-                                     horn_current=300.0)
+from constants import BR_PI_MUNU, M_P, M_PI
+from rkhorn import ChargedPionFluxMiniBooNE, forced_detector_flux
+
+plt.style.use("custom.mplstyle")
+
+rkhornsim = ChargedPionFluxMiniBooNE(
+    proton_energy=8.0e3 + M_P, meson_species="pi_plus",
+    solid_angle_cut=0.00924, n_samples=50000, n_pot=1, horn_current=300.0)
 ```
 
-To simulate the beamspot, the production of charged pions of a chosen ```meson_charge=1``` or ```meson_charge=-1```, and the focusing, we call
-```
+The meson is chosen with ```meson_species```: ```"pi_plus"```, ```"pi_minus"``` or ```"k_plus"``` (this also sets its charge, mass and lifetime). A positive ```horn_current``` focuses positive mesons (neutrino mode); use a negative current for antineutrino mode. To simulate the beamspot, the production of the mesons, and the focusing, we call
+```python
 rkhornsim.simulate()
 ```
 which will simulate ```n_samples``` number of weighted Monte-Carlo samples of charged mesons through the horn system. To extract the final momenta, angles, and weights, use
-```
+```python
 pi_thetas_post_horn = rkhornsim.pip_theta_post_horn
 pi_momenta_post_horn = rkhornsim.pip_p_post_horn
 pi_weights_post_horn = rkhornsim.pip_wgt_post_horn
 ```
 The weights will be normalized to the number of protons-on-target (POT), ```n_pot``` that the user specifies above.
 
+To get the muon-neutrino flux at MiniBooNE (541 m downstream, on axis) from these mesons:
+```python
+rkhornsim.simulate(discard_zeros=True)
+mesons = rkhornsim.decayed_flux_array()
+e_nu, flux = forced_detector_flux(mesons, m_meson=M_PI, br=BR_PI_MUNU)
+```
+
 
 ### Plotting example (1)
 We can visualize the tracks of the simulated mesons as they transport through the horn system. Let's start by simulating a small number of mesons, just ```n_samples=20```, but keep the histories of each pion by using ```simulate_with_histories()``` instead of ```simulate()```, which returns a list of lists for the x, y, and z positions over time:
-```
-rkhornsim2 = ChargedPionFluxMiniBooNE(proton_energy=8.0e3 + M_P, meson_charge=1.0,
-                                     solid_angle_cut=0.00924, n_samples=20, n_pot=1,
-                                     horn_current=300.0)
+```python
+rkhornsim2 = ChargedPionFluxMiniBooNE(
+    proton_energy=8.0e3 + M_P, meson_species="pi_plus",
+    solid_angle_cut=0.00924, n_samples=20, n_pot=1, horn_current=300.0)
 
 xs, ys, zs = rkhornsim2.simulate_with_histories()
 
@@ -106,70 +131,69 @@ horn_end = rkhornsim2.rksolver.horn_end
 z_values = np.linspace(0.0, 1.9, 50)
 y_inner = rkhornsim2.rksolver.inner_radius(z_values)
 
-fig = plt.figure()
-ax = fig.add_subplot(111)
+fig, ax = plt.subplots(figsize=(16, 6))
 
-plt.hlines(y=[-0.3, 0.3], xmin=horn_start, xmax=horn_end, color="k", ls="dotted")
-plt.vlines(x=[horn_start, horn_end], ymin=-0.3, ymax=0.3, color="k", ls="dotted")
-plt.plot(z_values, y_inner, color="k")
-plt.plot(z_values, -y_inner, color="k")
+ax.hlines(y=[-0.3, 0.3], xmin=horn_start, xmax=horn_end, color="k",
+          linestyle="dotted")
+ax.vlines(x=[horn_start, horn_end], ymin=-0.3, ymax=0.3, color="k",
+          linestyle="dotted")
+ax.plot(z_values, y_inner, color="k")
+ax.plot(z_values, -y_inner, color="k")
 
 for i in range(rkhornsim2.n_samples):
-    plt.plot(zs[i], ys[i], color="b", linewidth=1.0, alpha=0.5)
+    ax.plot(zs[i], ys[i], color="b", linewidth=1.0, alpha=0.5)
 
-ax.set_aspect('equal')
-
-plt.ylabel(r"$y$ [m]", fontsize=12)
-plt.xlabel(r"$z$ [m]", fontsize=12)
-plt.ylim((-0.4,0.4))
-plt.xlim((-0.1, 3.0))
-plt.xticks(fontsize=12)
-plt.yticks(fontsize=12)
-plt.tight_layout()
+ax.set_aspect("equal")
+ax.set_xlabel(r"$z$ [m]")
+ax.set_ylabel(r"$y$ [m]")
+ax.set_xlim(-0.1, 3.0)
+ax.set_ylim(-0.4, 0.4)
+fig.tight_layout()
 plt.show()
 ```
 
 Giving us the following nice plot:
 ![Meson transport through the BNB focusing horn](./plots/horn_transport_visualization.png)
 
-Here we can see the pi+ tracks projected onto the y,z plane in blue. Their origins are always inside the BNB target inside the Horn boundary. We cut off the simulation either when their z values reach 3 meters, or when the time exceeds 10000 seconds or when the pion decays.
+Here we can see the pi+ tracks projected onto the y,z plane in blue. Their origins are always inside the BNB target inside the Horn boundary. The step-by-step tracking of each meson stops when it passes the downstream end of the horn (z = 1.94 m), goes backwards past z = 0, decays, stops in material, or after 10000 time steps. Downstream of the horn the mesons fly in a straight line to their decay point.
 
 ### Plotting example 2
 
 We can visualize the statistics for many more pions by increasing the sample size to ```n_samples=50000```. This should take several seconds.
 
-```
-rkhornsim = ChargedPionFluxMiniBooNE(proton_energy=8.0e3 + M_P, meson_charge=1.0,
-                                     solid_angle_cut=0.00924, n_samples=50000, n_pot=1,
-                                     horn_current=300.0)
-
+```python
+rkhornsim = ChargedPionFluxMiniBooNE(
+    proton_energy=8.0e3 + M_P, meson_species="pi_plus",
+    solid_angle_cut=0.00924, n_samples=50000, n_pot=1, horn_current=300.0)
 
 rkhornsim.simulate()
 ```
 
 The distributions can then be plotted with
-```
-
-pi_thetas_pre_horn = rkhornsim.meson_flux_pre_horn[:,1]
-pi_momenta_pre_horn = rkhornsim.meson_flux_pre_horn[:,0]
-pi_weights_pre_horn = rkhornsim.meson_flux_pre_horn[:,2]
+```python
+pi_thetas_pre_horn = rkhornsim.meson_flux_pre_horn[:, 1]
+pi_momenta_pre_horn = rkhornsim.meson_flux_pre_horn[:, 0]
+pi_weights_pre_horn = rkhornsim.meson_flux_pre_horn[:, 2]
 
 pi_thetas_post_horn = rkhornsim.pip_theta_post_horn
 pi_momenta_post_horn = rkhornsim.pip_p_post_horn
-pi_weights_post_horn = rkhornsim.pip_wgt_post_horn   # the number of pions that decayed pointing within detector solid angle
-
-print(pi_weights_post_horn, pi_weights_pre_horn)
+# the number of pions that decayed pointing within detector solid angle
+pi_weights_post_horn = rkhornsim.pip_wgt_post_horn
 
 theta_bins = np.logspace(-4, np.log10(np.pi/4), 100)
 momentum_bins = np.logspace(1, np.log10(7000.0), 100)
 
-plt.hist(pi_thetas_post_horn, weights=pi_weights_post_horn, bins=theta_bins, histtype='step', color='b', density=False, label="Post-horn")
-plt.hist(pi_thetas_pre_horn, weights=pi_weights_pre_horn, bins=theta_bins, density=False, color='k', histtype='step', label="Pre-horn")
-plt.yscale('log')
-plt.ylabel(r"$\pi^+$/POT", fontsize=14)
-plt.xlabel(r"$\theta_\pi$ [rad]", fontsize=14)
-plt.xscale('log')
-plt.legend(loc="upper left")
+fig, ax = plt.subplots(figsize=(9, 7))
+ax.hist(pi_thetas_post_horn, weights=pi_weights_post_horn, bins=theta_bins,
+        histtype="step", color="b", label="Post-horn")
+ax.hist(pi_thetas_pre_horn, weights=pi_weights_pre_horn, bins=theta_bins,
+        histtype="step", color="k", label="Pre-horn")
+ax.set_xscale("log")
+ax.set_yscale("log")
+ax.set_xlabel(r"$\theta_\pi$ [rad]")
+ax.set_ylabel(r"$\pi^+$/POT")
+ax.legend(loc="upper left")
+fig.tight_layout()
 plt.show()
 ```
 
@@ -182,11 +206,22 @@ This visualizes the effect of the focusing; the pions post-horn are now pointed 
 Here we can also look at the pre-horn and post-horn momenta distribution. The post-horn momentta are softer, as expected.
 
 
+## Validation
+
+```
+python tests/test_physics.py     # hand-checkable physics tests (field, kicks, energy loss, decay, cross sections, flux)
+python validate_flux.py          # neutrino flux at MiniBooNE vs the published flux, bin by bin
+```
+
+```validate_flux.py``` compares the $\nu_\mu$ flux from $\pi^+$ (neutrino mode) and the $\bar{\nu}_\mu$ flux from $\pi^-$ (antineutrino mode) with the curves digitized from [3] (in ```data/public_digitized_fluxes```; these are the pion components of the published flux, Figs. 29 and 31 of [3]). The current level of agreement and the list of effects that are not modeled are in [PHYSICS_LEDGER.md](../agent_review/PHYSICS_LEDGER.md).
+
 ## TODO
-* adding pion scattering and absorption in material
+* secondary meson production by re-interacting protons and neutrons (about 8-10% of the $\nu_\mu$ flux)
+* the current distribution inside the inner conductor (skin effect)
+* multiple scattering and quasi-elastic scattering of mesons in material; the target sleeve and fins
+* neutrinos from muon decay and from three-body kaon decays; $K^-$ and $K^0$ production
 * implementing custom horn geometries
 * implementing alternative target materials
-* simulating decay positions
 
 ## Implementing a custom horn geometry
 

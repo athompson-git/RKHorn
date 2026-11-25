@@ -1,51 +1,49 @@
-# Physical constants
-# Default values are in s, cm, MeV
-# Alternate values provided for common constants
+"""Physical constants in seconds, centimeters and MeV."""
 
 # Set the base units
-MeV = 1.0
-keV = 1e-3
-cm = 1.0
-ang = 1e-8
-sec = 1.0
+MEV = 1.0
+KEV = 1e-3
+CM = 1.0
+ANGSTROM = 1e-8
+SEC = 1.0
 
 # Dimensionless constants
 ALPHA = 1/137
-kPI = 3.14159
+K_PI = 3.14159
 
 # Fundamental constants
-C_LIGHT  = 2.99792458e10 * (cm / sec)  # Speed of light
-HBAR = 6.58212e-22 * MeV * sec  # Reduced Planck's Constant (hbar)
-HBARC = 1.97236e-11 * MeV * cm  # hbar * c
-HC = 1.239e-10 * MeV * cm  # h c
-KB = 8.617333262145e-11 # Boltzmann's constant in MeV K^-1
+C_LIGHT = 2.99792458e10 * (CM / SEC)  # Speed of light
+HBAR = 6.58212e-22 * MEV * SEC  # Reduced Planck's constant (hbar)
+HBARC = 1.97236e-11 * MEV * CM  # hbar * c
+HC = 1.239e-10 * MEV * CM  # h c
+KB = 8.617333262145e-11  # Boltzmann's constant in MeV K^-1
 MU0 = 1.25663706212e-6  # Permeability of vacuum in kg / (A * s^2)
 CHARGE_COULOMBS = 1.602176634e-19  # elementary charge in coulombs
 
-# Scientific Constants
+# Scientific constants
 AVOGADRO = 6.022e23
 
-# Particle Masses
-M_E = 0.511 * MeV  # electron
-M_P = 938.0 * MeV  # proton
-M_MU = 105.658369 * MeV  # muon
-M_TAU = 1.77699e3 * MeV  # tau
-M_U = 2.2 * MeV  # up quark
-M_D = 4.7 * MeV  # down quark
-M_C = 1.280e3 * MeV  # charm quark
-M_PI = 139.57 * MeV  # pi+ / pi-
-M_PI0 = 134.98 * MeV  # pi0
-M_ETA = 547.862 * MeV  # eta
-M_N = 939.56 * MeV  # neutron
-M_A = 1014 * MeV  # axial mass
-M_K = 493.67 * MeV  # charged Kaon
+# Particle masses
+M_E = 0.511 * MEV  # electron
+M_P = 938.0 * MEV  # proton
+M_MU = 105.658369 * MEV  # muon
+M_TAU = 1.77699e3 * MEV  # tau
+M_U = 2.2 * MEV  # up quark
+M_D = 4.7 * MEV  # down quark
+M_C = 1.280e3 * MEV  # charm quark
+M_PI = 139.57 * MEV  # pi+ / pi-
+M_PI0 = 134.98 * MEV  # pi0
+M_ETA = 547.862 * MEV  # eta
+M_N = 939.56 * MEV  # neutron
+M_A = 1014 * MEV  # axial mass
+M_K = 493.67 * MEV  # charged kaon
 
-# conversion between units
+# Conversion between units
 METER_BY_MEV = 6.58212e-22 * 2.998e8  # MeV*m
 MEV_PER_KG = 5.6095887e29  # MeV/kg
 MEV_PER_HZ = 6.58e-22  # 1 s^-1 = 6.58e-22 MeV
 CM_PER_ANG = 1e-8  # cm to angstroms
-KEV_CM = HBARC / keV / ang
+KEV_CM = HBARC / KEV / ANGSTROM
 MEV2_CM2 = (METER_BY_MEV * 100)**2
 S_PER_DAY = 3600*24
 HBARC_KEV_ANG = 1.97
@@ -57,31 +55,23 @@ CABIBBO = 0.9743  # Cosine of the Cabibbo angle
 R_E = 2.81794e-13  # classical electron radius in cm
 V_UD = 0.9737  # ckm ud
 V_US = 0.2245  # ckm us
-F_PI = 130.2 * MeV  # pion decay constant
-F_K = 155.7 * MeV  # kaon decay constant
+F_PI = 130.2 * MEV  # pion decay constant
+F_K = 155.7 * MEV  # kaon decay constant
+
+KAON_TO_PION_XS = 0.75
+
+BR_PI_MUNU = 0.999877
+BR_K_MUNU = 0.6344
 
 # Lifetimes
-KAON_LIFETIME = 1.238e-8 * sec
-KSHORT_LIFETIME = 8.954e-11 * sec
-KLONG_LIFETIME = 5.116e-8 * sec
-PION_LIFETIME = 2.6e-8 * sec
-PI0_LIFETIME = 8.5e-17 * sec
+KAON_LIFETIME = 1.238e-8 * SEC
+KSHORT_LIFETIME = 8.954e-11 * SEC
+KLONG_LIFETIME = 5.116e-8 * SEC
+PION_LIFETIME = 2.6e-8 * SEC
+PI0_LIFETIME = 8.5e-17 * SEC
 
-# Total Widths in MeV
-PION_WIDTH = 2.524e-14 * MeV
+# Total widths in MeV
+PION_WIDTH = 2.524e-14 * MEV
 PI0_WIDTH = 1.0
-KAON_WIDTH = 5.317e-14 * MeV
+KAON_WIDTH = 5.317e-14 * MEV
 
-
-# Crystal constants
-Z_GE = 32
-R0_GE = 0.53
-VCELL_GE = 181
-LATTICE_CONST_GE = 5.66
-
-R0_CSI = 1.0
-
-
-# Astronomical constants
-L_SUN_EARTH = 15.13e12  # cm
-R_SUN = 6.957e10  # cm

@@ -120,8 +120,7 @@ plt.legend(loc="upper left")
 plt.show()
 
 # dump to file
-out_array = np.array([pi_momenta_post_horn, pi_thetas_post_horn, decay_x, decay_y, decay_z, decay_wgts, pi_weights_post_horn]).transpose()
-np.savetxt(out_file, out_array)
+np.savetxt(out_file, rkhornsim.decayed_flux_array())
 
 
 

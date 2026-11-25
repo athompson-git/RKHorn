@@ -5,7 +5,10 @@ Lorentz vector and vector classes, monte carlo methods for decays, boost method
 import numpy as np
 from numpy import pi, sqrt, power, sin, cos, arccos, arctan2, log, arctan
 
-from constants import *
+try:
+    from .constants import *
+except ImportError:
+    from constants import *
 
 
 
