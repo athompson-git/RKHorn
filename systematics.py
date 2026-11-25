@@ -10,7 +10,7 @@ import numpy as np
 import flux_io
 from constants import BR_K_MUNU, BR_PI_MUNU, M_K, M_P, M_PI
 from meson_physics import meson_production_d2SdpdOmega
-from rkhorn import ChargedPionFluxMiniBooNE, forced_detector_flux
+from rkhorn import ChargedPionFluxMiniBooNE, disc_averaged_flux
 
 OUTPUT_DIR = os.path.join(flux_io.DATA_DIR, "systematics")
 
@@ -292,9 +292,10 @@ def build_histograms(record: dict, sample: Sample) -> list[Histogram]:
             for key, value in record.items() if key != "meta"}
     all_rows = np.arange(data["p0"].shape[0])
     decayed = np.flatnonzero(data["decay_in_volume"] > 0.0)
-    e_nu, w_nu = forced_detector_flux(
+    e_nu, w_nu = disc_averaged_flux(
         flux_io.flux_array(record), m_meson=sample.m_meson,
         br=sample.branching_ratio)
+    flux_rows = np.tile(decayed, e_nu.shape[0] // decayed.shape[0])
     return [
         make_histogram("pre_horn_p", P_EDGES, data["p0"] * 1.0e-3,
                        data["weight0"], all_rows, True),
@@ -305,7 +306,7 @@ def build_histograms(record: dict, sample: Sample) -> list[Histogram]:
         make_histogram("post_horn_theta", THETA_EDGES,
                        data["theta"][decayed], data["weight"][decayed],
                        decayed, True),
-        make_histogram("nu_flux", NU_EDGES, e_nu, w_nu, decayed, False),
+        make_histogram("nu_flux", NU_EDGES, e_nu, w_nu, flux_rows, False),
     ]
 
 
@@ -454,9 +455,12 @@ def run_sample(sample: Sample, n_throws: int, seed: int) -> dict | None:
 
     _, min_eigenvalue = covariance_factor(model.covariance)
     flux = histograms[-1]
-    flux_stat = np.bincount(
-        flux.bins, weights=(flux.weights * nominal_ratio[flux.rows])**2,
-        minlength=NU_EDGES.shape[0])[:-1]
+    n_cells = NU_EDGES.shape[0]
+    per_meson = np.bincount(
+        flux.rows * n_cells + flux.bins,
+        weights=flux.weights * nominal_ratio[flux.rows],
+        minlength=nominal_ratio.shape[0] * n_cells).reshape(-1, n_cells)
+    flux_stat = np.sum(per_meson**2, axis=0)[:-1]
     output = {
         "sample": sample.name,
         "species": sample.species,
