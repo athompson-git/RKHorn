@@ -21,10 +21,10 @@ The RKHorn classes implement a very basic set of approximations to model the cha
 * Similarly, we implement the Feynman-Scaling (FS) parameterization for $K^+$ production (a modified SW fit is also available)
 * The meson yield per proton-on-target is (probability that the proton has a reaction in the 71.1 cm target) $\times$ (meson production cross section) / (p-Be reaction cross section), where "reaction" means inelastic excluding quasi-elastic, 177.5 mb at 8.89 GeV/c
 * The charged mesons are propagated through the target and horn according to simple equations of motion solved by Runge-Kutta finite timestep propagation
-* When the mesons are in material (the beryllium target, 0.48 cm in radius, or the aluminum inner conductor of the horn), Bethe-Bloch energy loss is applied at each timestep and the meson weight is reduced by its probability of a hadronic interaction, $\exp(-n \sigma \ell)$
-* Each timestep update is governed by the Lorentz force law equation of motion, with an azimuthally symmetric magnetic field that is only non-zero between the inner and outer conductors of the horn
-* Mesons decay in flight with their own lifetime, inside the horn or downstream of it. A decay counts if it happens before the beam stop (50 m), inside the decay pipe (3 ft radius), and the meson cleared the collimator
-* The neutrino flux at the detector is computed analytically from each decayed meson (see below)
+* When the mesons are in material (the beryllium target, 0.48 cm in radius, or the aluminum inner conductor of the horn), Bethe-Bloch energy loss with the density-effect correction is applied at each timestep and the meson weight is reduced by its probability of a hadronic interaction, $\exp(-n \sigma \ell)$
+* Each timestep update is governed by the Lorentz force law equation of motion, with an azimuthally symmetric magnetic field between the inner and outer conductors of the horn. The current enters the inner conductor over a skin depth of 1.4 mm, as in the nominal model of [3], so part of the field lies inside the aluminum
+* Mesons decay in flight with their own lifetime, inside the horn or downstream of it. A decay counts if it happens before the beam stop (50 m), inside the decay pipe (3 ft radius), and the meson cleared the collimator. Downstream of the horn the beamline is filled with air, which removes about 2% of the mesons. A negative meson that stops in material is captured by a nucleus and gives no neutrino
+* The neutrino flux at the detector is computed analytically from each decayed meson (see below). For the comparison with MiniBooNE it is averaged over the face of the detector
 
 Let's begin with the modeling of the proton beam spot. We take the gaussian profile of the beam spot on the face of the Be target from [1](####references); we simulate $(x_0,y_0,z_0)$ positions and momenta $(p_x,p_y,p_z)$ of the colliding proton beam of total momentum $p = \sqrt{(T_p + m_p)^2 - m_p^2} \simeq 8.9$ GeV,
 where $T_p = 8$ GeV kinetic energy, by drawing 
@@ -60,7 +60,7 @@ with velocity $\beta$ and Lorentz factor $\gamma$, at an angle $\alpha$ to the l
 
 $$ E_\nu = \frac{E^{\ast}}{\gamma (1 - \beta \cos\alpha)}, \qquad \Phi = \frac{\mathrm{BR}}{4 \pi L^2} \frac{1}{\gamma^2 (1 - \beta \cos\alpha)^2}, \qquad E^{\ast} = \frac{m_M^2 - m_\mu^2}{2 m_M} $$
 
-This is the function ```forced_detector_flux```.
+This is the function ```forced_detector_flux```. It gives the flux at one point. The published MiniBooNE flux [3] counts the neutrinos that cross a disc of radius 6.106 m at 541 m, centered 1.9 m off the beam axis. ```disc_averaged_flux``` averages the formula above over that disc. The average matters for energetic pions, whose neutrinos are emitted in a cone that is not much wider than the detector: it lowers the flux by 3% overall and by about 20% between 1.5 and 2 GeV.
 
 The animation below shows these steps for an illustrative pulse of 30 protons with the horn at $+174$ kA. The $\pi^+$ tracks (red) bend toward the beam axis in the horn field. Two of the pions decay within the 20 ns shown, each into a muon (blue) and a neutrino (dashed).
 
@@ -89,7 +89,8 @@ import numpy as np
 
 from constants import BR_PI_MUNU, M_P, M_PI
 import flux_io
-from rkhorn import ChargedPionFluxMiniBooNE, forced_detector_flux
+from rkhorn import (ChargedPionFluxMiniBooNE, disc_averaged_flux,
+                    forced_detector_flux)
 
 plt.style.use("custom.mplstyle")
 
@@ -98,7 +99,7 @@ rkhornsim = ChargedPionFluxMiniBooNE(
     n_samples=20000, n_pot=1, horn_current=174.0)
 ```
 
-The meson is chosen with ```meson_species```: ```"pi_plus"```, ```"pi_minus"``` or ```"k_plus"``` (this also sets its charge, mass and lifetime). A positive ```horn_current``` focuses positive mesons (neutrino mode); use a negative current for antineutrino mode. To simulate the beamspot, the production of the mesons, and the focusing, we call
+The meson is chosen with ```meson_species```: ```"pi_plus"```, ```"pi_minus"``` or ```"k_plus"``` (this also sets its charge, mass and lifetime). A positive ```horn_current``` focuses positive mesons (neutrino mode); use a negative current for antineutrino mode. Two further options switch off parts of the model: ```skin_depth=None``` puts all the horn current on the surface of the inner conductor, and ```air=False``` empties the beamline downstream of the horn. To simulate the beamspot, the production of the mesons, and the focusing, we call
 ```python
 rkhornsim.simulate(theta_max=0.6)
 ```
@@ -110,15 +111,19 @@ pi_weights_post_horn = rkhornsim.pip_wgt_post_horn
 ```
 The weights will be normalized to the number of protons-on-target (POT), ```n_pot``` that the user specifies above.
 
-To get the muon-neutrino flux at MiniBooNE (541 m downstream, on axis) from these mesons:
+To get the muon-neutrino flux 541 m downstream on the beam axis, and the flux averaged over the MiniBooNE detector, from these mesons:
 ```python
 mesons = rkhornsim.decayed_flux_array()
 in_beamline = mesons[:, 5] > 0.0
 e_nu, flux = forced_detector_flux(mesons[in_beamline], m_meson=M_PI,
                                   br=BR_PI_MUNU, det_pos=(0.0, 0.0, 541.0))
-print(f"nu_mu flux at MiniBooNE: {flux.sum():.2e} nu / cm^2 / POT")
+print(f"nu_mu flux on the beam axis: {flux.sum():.2e} nu / cm^2 / POT")
+
+e_nu_disc, flux_disc = disc_averaged_flux(mesons[in_beamline], m_meson=M_PI,
+                                          br=BR_PI_MUNU)
+print(f"nu_mu flux over the detector: {flux_disc.sum():.2e} nu / cm^2 / POT")
 ```
-This prints a flux close to $6 \times 10^{-10}$ $\nu$ / cm$^2$ / POT. ```decayed_flux_array()``` returns one row per meson with eight columns:
+Both numbers are close to $6 \times 10^{-10}$ $\nu$ / cm$^2$ / POT, and the second is a few percent lower. ```decayed_flux_array()``` returns one row per meson with eight columns:
 
 | Column | Quantity |
 |---|---|
@@ -129,7 +134,7 @@ This prints a flux close to $6 \times 10^{-10}$ $\nu$ / cm$^2$ / POT. ```decayed
 | 6 | weight [mesons per POT], after absorption in material |
 | 7 | azimuthal angle of the momentum at decay [rad] |
 
-Only the rows with column 5 equal to 1 should be passed to ```forced_detector_flux```. The detector position ```det_pos``` is in meters, in the same frame as the decay positions, so the flux at any other detector follows from the same mesons.
+Rows with column 5 equal to 0 contribute nothing to the flux. The detector position ```det_pos``` is in meters, in the same frame as the decay positions, so the flux at any other detector follows from the same mesons.
 
 The full sample, with the production point and momentum of each meson as well, can be saved and read back with ```flux_io```:
 ```python
@@ -232,7 +237,7 @@ plt.show()
 
 The left panel visualizes the effect of the focusing; the pions post-horn are now pointed to lower angles with respect to the beam line, and therefore their decay products (neutrinos) will have a higher flux within the detector solid angle downstream! Below 0.03 rad there are about eight times more pions after the horn than at production. We do not simulate the random walk as pions scatter through the target material (yet).
 
-The right panel shows the momentum distributions. The shape hardly changes, because the magnetic field does no work. The post-horn histogram is lower by about 10% overall (0.50 against 0.56 pions per POT), because the post-horn weights include hadronic absorption in the target and the horn conductor.
+The right panel shows the momentum distributions. The shape hardly changes, because the magnetic field does no work. The post-horn histogram is lower by about 13% overall (0.48 against 0.56 pions per POT), because the post-horn weights include hadronic absorption in the target, the horn conductor and the air.
 
 ## Validation
 
@@ -241,7 +246,7 @@ python tests/test_physics.py     # hand-checkable physics tests (field, kicks, e
 python tests/validate_flux.py          # neutrino flux at MiniBooNE vs the published flux, bin by bin
 ```
 
-```tests/validate_flux.py``` compares the $\nu_\mu$ flux from $\pi^+$ (neutrino mode) and the $\bar{\nu}_\mu$ flux from $\pi^-$ (antineutrino mode) with the curves digitized from [3] (in ```data/public_digitized_fluxes```; these are the pion components of the published flux, Figs. 29 and 31 of [3]). The script simulates fresh mesons with a fixed seed and prints the level of agreement.
+```tests/validate_flux.py``` compares the $\nu_\mu$ flux from $\pi^+$ (neutrino mode) and the $\bar{\nu}_\mu$ flux from $\pi^-$ (antineutrino mode) with the curves digitized from [3] (in ```data/public_digitized_fluxes```; these are the pion components of the published flux, Figs. 29 and 31 of [3]). The script simulates fresh mesons with a fixed seed, averages the flux over the detector disc, and prints the level of agreement. With ```--on-axis``` it takes the flux at one point on the beam axis.
 
 The figure below makes the same comparison with the saved samples of 150000 mesons per species (see "Saved meson samples"). The shaded bands are the uncertainty from the production fits (see "Production uncertainties").
 
@@ -251,14 +256,26 @@ The ratio of the RKHorn flux to the published one, with the statistical error of
 
 | $E_\nu$ [MeV] | $\nu_\mu$ from $\pi^+$ | $\bar{\nu}_\mu$ from $\pi^-$ |
 |---|---|---|
-| 0 to 3000 | 1.20 $\pm$ 0.02 | 1.14 $\pm$ 0.02 |
-| 0 to 500 | 0.93 $\pm$ 0.02 | 0.88 $\pm$ 0.02 |
-| 500 to 1000 | 1.15 $\pm$ 0.03 | 1.19 $\pm$ 0.03 |
-| 1000 to 1500 | 1.46 $\pm$ 0.05 | 1.51 $\pm$ 0.05 |
-| 1500 to 2000 | 1.90 $\pm$ 0.10 | 2.22 $\pm$ 0.12 |
-| 2000 to 3000 | 1.90 $\pm$ 0.18 | 1.76 $\pm$ 0.20 |
+| 0 to 3000 | 1.16 $\pm$ 0.01 | 1.10 $\pm$ 0.01 |
+| 0 to 500 | 0.92 $\pm$ 0.02 | 0.90 $\pm$ 0.02 |
+| 500 to 1000 | 1.14 $\pm$ 0.02 | 1.15 $\pm$ 0.02 |
+| 1000 to 1500 | 1.38 $\pm$ 0.02 | 1.34 $\pm$ 0.02 |
+| 1500 to 2000 | 1.61 $\pm$ 0.04 | 1.82 $\pm$ 0.04 |
+| 2000 to 3000 | 1.98 $\pm$ 0.06 | 2.35 $\pm$ 0.07 |
 
-The integrated flux is 20% and 14% above the published prediction with no tuned parameters, and the spectrum is too hard above 1 GeV. The effects that are not modeled are listed under "TODO" below.
+The integrated flux is 16% and 10% above the published prediction with no tuned parameters, and the spectrum is too hard above 1 GeV.
+
+Measured on matched samples, the pieces of the model move the $\nu_\mu$ flux as follows. The step size is included as a numerical check.
+
+| Change | 0 to 3 GeV | 1.5 to 2 GeV | 2 to 3 GeV |
+|---|---|---|---|
+| average over the detector, against one point on the axis | $-3.4\%$ | $-21\%$ | $-21\%$ |
+| skin effect in the inner conductor | $+1.7\%$ | $+10\%$ | $+22\%$ |
+| air downstream of the horn | $-2.0\%$ | $-2.5\%$ | $-2.3\%$ |
+| density effect in the energy loss | $+0.2\%$ | $+1.2\%$ | $+1.4\%$ |
+| time step of 0.03 ns, against 0.1 ns | $+0.2 \pm 0.2\%$ | $-0.2 \pm 0.4\%$ | $+0.1 \pm 0.7\%$ |
+
+The effects that are not modeled are listed under "TODO" below.
 
 ## Saved meson samples
 
@@ -291,7 +308,7 @@ Notebooks in ```jupyter/```: ```example.ipynb``` is a walk-through of the code, 
 python systematics.py                 # 1000 parameter sets, writes data/systematics
 ```
 
-```systematics.py``` propagates the uncertainty of the meson production fits to the meson and neutrino fluxes. It draws 1000 sets of Sanford-Wang and Feynman-scaling parameters from the covariance matrices of [3], reweights the saved mesons for each set, and stores the nominal spectra with their bands in ```data/systematics```. No meson is tracked again. The uncertainty on the neutrino flux at MiniBooNE below 3 GeV is 13% for $\pi^+$, 15% for $\pi^-$ and 7% for $K^+$. Only the parameters of the production fits are varied.
+```systematics.py``` propagates the uncertainty of the meson production fits to the meson and neutrino fluxes. It draws 1000 sets of Sanford-Wang and Feynman-scaling parameters from the covariance matrices of [3], reweights the saved mesons for each set, and stores the nominal spectra with their bands in ```data/systematics```. No meson is tracked again. The uncertainty on the neutrino flux at MiniBooNE below 3 GeV is 13% for $\pi^+$, 15% for $\pi^-$ and 7% for $K^+$. Only the parameters of the production fits are varied. The other sources in Table XIV of [3] are held fixed: proton delivery and optics, the horn field, and the interaction cross sections of nucleons and pions.
 
 <img src="./plots/paper/meson_spectra_systematics.png" alt="Meson momentum spectra with the uncertainty from the production fits" width="480">
 
@@ -311,8 +328,7 @@ The couplings ($g = 10^{-4}$ and $\sin\theta = 10^{-4}$) are benchmarks chosen f
 
 ## TODO
 * secondary meson production by re-interacting protons and neutrons (about 8-10% of the $\nu_\mu$ flux)
-* the current distribution inside the inner conductor (skin effect)
-* multiple scattering and quasi-elastic scattering of mesons in material; the target sleeve and fins
+* multiple scattering and quasi-elastic scattering of mesons in material; the target sleeve and fins; the outer conductor and end cap of the horn
 * neutrinos from muon decay and from three-body kaon decays; $K^-$ and $K^0$ production
 * implementing custom horn geometries
 * implementing alternative target materials
