@@ -189,7 +189,9 @@ class ChargedPionFluxMiniBooNE:
         self.decay_positions = []
         self.decay_in_pipe_wgt = []
         self.pip_phi_post_horn = []
+        self.kept_rows = []
         phis = np.random.uniform(0.0, 2*pi, self.n_samples)
+        self.phi0 = phis
         for i, pflux in enumerate(tqdm(self.meson_flux_pre_horn)):
             p = pflux[0]
             theta = pflux[1]
@@ -216,6 +218,7 @@ class ChargedPionFluxMiniBooNE:
                 
                 self.decay_positions.append(self.rksolver.decay_pos)
                 self.decay_in_pipe_wgt.append(decay_in_vol)
+                self.kept_rows.append(i)
                 self.pip_p_post_horn.append(p_final)
                 self.pip_theta_post_horn.append(theta_final)
                 self.pip_phi_post_horn.append(phi_final)
@@ -241,6 +244,7 @@ class ChargedPionFluxMiniBooNE:
                 
                 self.decay_positions.append(projected_decay_pos)
                 self.decay_in_pipe_wgt.append(decay_in_vol)
+                self.kept_rows.append(i)
                 self.pip_p_post_horn.append(p_final)
                 self.pip_theta_post_horn.append(theta_final)
                 self.pip_phi_post_horn.append(phi_final)
@@ -249,6 +253,7 @@ class ChargedPionFluxMiniBooNE:
 
     def simulate(self, discard_zeros=False, p_min=0.01, p_max=7.5, theta_min=0.0, theta_max=np.pi/2):
         self.simulate_beam_spot()
+        self.sample_range = (p_min, p_max, theta_min, theta_max)
         self.meson_flux_pre_horn = self.charged_meson_flux_mc(p_min=p_min, p_max=p_max,
                                         theta_min=theta_min, theta_max=theta_max)
 
@@ -260,6 +265,47 @@ class ChargedPionFluxMiniBooNE:
                                 pos[:,0], pos[:,1], pos[:,2], self.decay_in_pipe_wgt,
                                 self.pip_wgt_post_horn, self.pip_phi_post_horn])
     
+    def meson_record(self) -> dict:
+        """Returns production and decay data of each tracked meson.
+
+        Returns:
+            Arrays keyed by quantity, plus a "meta" dict.
+        """
+        rows = np.array(self.kept_rows, dtype=int)
+        pos = np.array(self.decay_positions).reshape(-1, 3)
+        columns = {
+            "p0": self.meson_flux_pre_horn[rows, 0],
+            "theta0": self.meson_flux_pre_horn[rows, 1],
+            "phi0": self.phi0[rows],
+            "x0": self.x0[rows],
+            "y0": self.y0[rows],
+            "z0": self.z0[rows],
+            "weight0": self.meson_flux_pre_horn[rows, 2],
+            "p": self.pip_p_post_horn,
+            "theta": self.pip_theta_post_horn,
+            "phi": self.pip_phi_post_horn,
+            "decay_x": pos[:, 0],
+            "decay_y": pos[:, 1],
+            "decay_z": pos[:, 2],
+            "decay_in_volume": self.decay_in_pipe_wgt,
+            "weight": self.pip_wgt_post_horn,
+        }
+        record = {k: np.asarray(v, dtype=np.float32)
+                  for k, v in columns.items()}
+        p_min, p_max, theta_min, theta_max = self.sample_range
+        record["meta"] = {
+            "species": self.meson_type,
+            "horn_current_ka": self.rksolver.current/1000.0,
+            "n_samples": self.n_samples,
+            "n_pot": self.n_pot,
+            "p_proton_mev": float(self.p_proton),
+            "p_range_gev": (p_min, p_max),
+            "theta_range_rad": (theta_min, theta_max),
+            "absorption": self.rksolver.absorption,
+            "step_ns": self.rksolver.dt*1.0e9,
+        }
+        return record
+
     def focus_pions_with_histories(self):
         self.pip_p_post_horn = []
         self.pip_theta_post_horn = []

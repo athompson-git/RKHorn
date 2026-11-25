@@ -1,180 +1,138 @@
-from rkhorn import *
-from rkhorn import ChargedPionFluxMiniBooNE
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-from matplotlib.pylab import rc
-rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-rc('text', usetex=True)
+#!/usr/bin/env python3
+"""Simulates BNB meson samples and saves them in data/."""
+
+import argparse
+import contextlib
+import io
+from multiprocessing import Pool
+import os
 
 import numpy as np
 
-#rkhornsim = ChargedPionFluxMiniBooNE(proton_energy=8.0e3 + M_P, meson_charge=1.0,
-#                                     solid_angle_cut=0.00924, n_samples=1000000, n_pot=1,
-#                                     horn_current=170.0)
+from constants import M_P
+import flux_io
+from rkhorn import ChargedPionFluxMiniBooNE
 
-# INPUT PARAMETERS
-out_file = "data/bnb_focused_piminus_flux_rkhorn_1POT_BetheBloch.txt"
-meson_type = "pi_minus"  # pi_minus, pi_plus, k_plus
-if "minus" in meson_type:
-    meson_charge = -1
-else:
-    meson_charge = 1
-polarization = -1.0 # -1.0 for anti-nu mode, 1 for nu mode
-n_samples = 1000000
-p_proton = 8.89e3  # beam momentum
-e_proton = sqrt(p_proton**2 + M_P**2)
+P_PROTON = 8.89e3
+NOMINAL_CURRENT = {"pi_plus": 174.0, "k_plus": 174.0, "pi_minus": -174.0}
+TXT_FILES = {
+    "pi_plus": "bnb_focused_piplus_flux_rkhorn_1POT_BetheBloch.txt",
+    "pi_minus": "bnb_focused_piminus_flux_rkhorn_1POT_BetheBloch.txt",
+    "k_plus": "bnb_focused_Kplus_flux_rkhorn_1POT_BetheBloch.txt",
+}
+TRACKS_FILE = os.path.join(flux_io.DATA_DIR, "tracks", "horn_3d_tracks.npz")
 
-rkhornsim = ChargedPionFluxMiniBooNE(proton_energy=e_proton, meson_charge=meson_charge,
-                                     solid_angle_cut=0.00924, n_samples=n_samples, n_pot=1,
-                                     horn_current=polarization*174.0, meson_species=meson_type)  # pi_plus, k_plus
+Job = tuple[str, float, int, int, float, bool]
 
 
-rkhornsim.simulate(discard_zeros=True)
+def run_chunk(job: Job) -> dict:
+    """Simulates one chunk of a meson sample.
+
+    Args:
+        job: Species, current [kA], mesons, seed, theta max, keep all.
+
+    Returns:
+        The meson record of the chunk.
+    """
+    species, horn_current, n_samples, seed, theta_max, keep_all = job
+    np.random.seed(seed)
+    sim = ChargedPionFluxMiniBooNE(
+        proton_energy=np.sqrt(P_PROTON**2 + M_P**2), n_samples=n_samples,
+        n_pot=1, horn_current=horn_current, meson_species=species)
+    with contextlib.redirect_stderr(io.StringIO()):
+        sim.simulate(discard_zeros=not keep_all, theta_max=theta_max)
+    return sim.meson_record()
 
 
-pi_thetas_pre_horn = rkhornsim.meson_flux_pre_horn[:,1]
-pi_momenta_pre_horn = rkhornsim.meson_flux_pre_horn[:,0]
-pi_weights_pre_horn = rkhornsim.meson_flux_pre_horn[:,2]
+def simulate_samples(configs: list[tuple[str, float]], n_samples: int,
+                     n_chunks: int, seed: int, theta_max: float,
+                     keep_all: bool) -> list[dict]:
+    """Simulates several meson samples in parallel.
 
-pi_thetas_post_horn = rkhornsim.pip_theta_post_horn
-pi_momenta_post_horn = rkhornsim.pip_p_post_horn
-pi_weights_post_horn = rkhornsim.pip_wgt_post_horn   # the number of pions that decayed pointing within detector solid angle
+    Args:
+        configs: Species and horn current [kA] of each sample.
+        n_samples: Mesons per sample.
+        n_chunks: Parallel chunks per sample.
+        seed: First random seed.
+        theta_max: Largest production angle sampled, in rad.
+        keep_all: Keep mesons that decay outside the beamline.
 
-decay_positions = np.array(rkhornsim.decay_positions)
-decay_wgts = np.array(rkhornsim.decay_in_pipe_wgt)
-decay_x = decay_positions[:,0]
-decay_y = decay_positions[:,1]
-decay_z = decay_positions[:,2]
-
-
-# PLOTTING THE DECAY HEAT MAP
-z_values = np.linspace(0.0, 1.9, 50)
-y_inner = rkhornsim.rksolver.inner_radius(z_values)
-plt.hlines(y=[-0.3, 0.3], xmin=rkhornsim.rksolver.horn_start,
-           xmax=rkhornsim.rksolver.horn_end, color="k", ls="dotted")
-plt.vlines(x=[rkhornsim.rksolver.horn_start, rkhornsim.rksolver.horn_end],
-           ymin=-0.3, ymax=0.3, color="k", ls="dotted")
-plt.plot(z_values, y_inner, color="k")
-plt.plot(z_values, -y_inner, color="k")
-
-bins_z = np.linspace(0.0, 50.0, 100)
-bins_y = np.linspace(-0.5, 0.5, 50)
-
-# with weights
-print(decay_wgts.shape, decay_z.shape, decay_y.shape)
-plt.hist2d(decay_z, decay_y, weights=decay_wgts, bins=[bins_z, bins_y])
-plt.ylabel(r"$y$ [m]", fontsize=12)
-plt.xlabel(r"$z$ [m]", fontsize=12)
-plt.colorbar()
-plt.xlim((0.0, max(bins_z)))
-plt.ylim((min(bins_y), max(bins_y)))
-plt.xticks(fontsize=12)
-plt.yticks(fontsize=12)
-plt.tight_layout()
-plt.show()
-plt.close()
-
-# without weights
-plt.hist2d(decay_z, decay_y, bins=[bins_z, bins_y])
-plt.ylabel(r"$y$ [m]", fontsize=12)
-plt.xlabel(r"$z$ [m]", fontsize=12)
-plt.colorbar()
-plt.xlim((0.0, max(bins_z)))
-plt.ylim((min(bins_y), max(bins_y)))
-plt.xticks(fontsize=12)
-plt.yticks(fontsize=12)
-plt.tight_layout()
-plt.show()
-plt.close()
-
-plt.hist(decay_z, bins=100)
-plt.show()
+    Returns:
+        One merged meson record per sample.
+    """
+    species_order = sorted(NOMINAL_CURRENT)
+    jobs = [(species, current, n_samples//n_chunks,
+             seed + 1000*species_order.index(species) + chunk, theta_max,
+             keep_all)
+            for species, current in configs for chunk in range(n_chunks)]
+    with Pool(min(len(jobs), os.cpu_count())) as pool:
+        chunks = pool.map(run_chunk, jobs)
+    return [flux_io.merge_records(chunks[k*n_chunks:(k + 1)*n_chunks])
+            for k in range(len(configs))]
 
 
+def simulate_tracks(n_tracks: int, horn_current: float, seed: int) -> None:
+    """Saves the trajectories of a few pions for the 3D figure.
+
+    Args:
+        n_tracks: Number of pions.
+        horn_current: Horn current in kA.
+        seed: Random seed.
+    """
+    np.random.seed(seed)
+    sim = ChargedPionFluxMiniBooNE(
+        proton_energy=np.sqrt(P_PROTON**2 + M_P**2), n_samples=n_tracks,
+        n_pot=1, horn_current=horn_current, meson_species="pi_plus")
+    sim.simulate_beam_spot()
+    sim.meson_flux_pre_horn = sim.charged_meson_flux_mc(
+        p_min=0.5, p_max=4.0, theta_min=0.03, theta_max=0.30)
+    xs, ys, zs = sim.focus_pions_with_histories()
+    os.makedirs(os.path.dirname(TRACKS_FILE), exist_ok=True)
+    np.savez_compressed(
+        TRACKS_FILE, x=np.concatenate(xs), y=np.concatenate(ys),
+        z=np.concatenate(zs), lengths=[len(z) for z in zs],
+        momenta=sim.meson_flux_pre_horn[:, 0], horn_current=horn_current)
 
 
+def main() -> None:
+    """Runs the requested simulations and writes the files."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--species", nargs="+", default=list(TXT_FILES),
+                        choices=list(TXT_FILES))
+    parser.add_argument("--horn-current", type=float, default=None,
+                        help="kA; default +174 (pi+, K+), -174 (pi-)")
+    parser.add_argument("--n", type=int, default=150000,
+                        help="mesons sampled per species")
+    parser.add_argument("--chunks", type=int, default=2,
+                        help="parallel chunks per species")
+    parser.add_argument("--seed", type=int, default=12345)
+    parser.add_argument("--theta-max", type=float, default=0.6,
+                        help="largest production angle sampled [rad]")
+    parser.add_argument("--format", default="pickle",
+                        choices=["pickle", "txt", "both"])
+    parser.add_argument("--in-volume-only", action="store_true",
+                        help="drop mesons that decay outside the beamline")
+    parser.add_argument("--tracks", type=int, default=0,
+                        help="also save this many pion trajectories")
+    opts = parser.parse_args()
+
+    configs = [(s, NOMINAL_CURRENT[s] if opts.horn_current is None
+                else opts.horn_current) for s in opts.species]
+    records = simulate_samples(configs, opts.n, opts.chunks, opts.seed,
+                               opts.theta_max, not opts.in_volume_only)
+    for (species, current), record in zip(configs, records):
+        if opts.format in ("pickle", "both"):
+            path = flux_io.pickle_path(species, current)
+            flux_io.save_meson_pickle(record, path)
+            print(f"wrote {path}")
+        if opts.format in ("txt", "both"):
+            path = os.path.join(flux_io.DATA_DIR, TXT_FILES[species])
+            flux_io.save_meson_txt(record, path)
+            print(f"wrote {path}")
+    if opts.tracks:
+        simulate_tracks(opts.tracks, 174.0, opts.seed)
+        print(f"wrote {TRACKS_FILE}")
 
 
-
-# Plot energy/angle distributions
-theta_bins = np.logspace(-4, np.log10(np.pi/4), 100)
-momentum_bins = np.logspace(1, np.log10(7000.0), 100)
-
-plt.hist(pi_thetas_post_horn, weights=pi_weights_post_horn, bins=theta_bins, histtype='step', color='b', density=False, label="Post-horn")
-plt.hist(pi_thetas_post_horn, weights=pi_weights_post_horn*decay_wgts, bins=theta_bins, histtype='step', color='g', density=False, label="Post-horn (good decays)")
-plt.hist(pi_thetas_pre_horn, weights=pi_weights_pre_horn, bins=theta_bins, density=False, color='k', histtype='step', label="Pre-horn")
-plt.yscale('log')
-plt.ylabel(r"$\pi^+$/POT", fontsize=14)
-plt.xlabel(r"$\theta_\pi$ [rad]", fontsize=14)
-plt.xscale('log')
-plt.legend(loc="upper left")
-plt.show()
-
-
-plt.hist(pi_momenta_post_horn, weights=pi_weights_post_horn, bins=100, histtype='step', color='b', label="Post-horn")
-plt.hist(pi_momenta_post_horn, weights=pi_weights_post_horn*decay_wgts, bins=100, histtype='step', color='g', label="Post-horn (good decays)")
-plt.hist(pi_momenta_pre_horn, weights=pi_weights_pre_horn, bins=momentum_bins, color='k', histtype='step', label="Pre-horn")
-plt.ylabel(r"$\pi^+$/POT", fontsize=14)
-plt.xlabel(r"$p_\pi$ [MeV]", fontsize=14)
-plt.legend(loc="upper left")
-plt.show()
-
-# dump to file
-np.savetxt(out_file, rkhornsim.decayed_flux_array())
-
-
-
-
-
-# VISUALIZATION
-rkhornsim2 = ChargedPionFluxMiniBooNE(proton_energy=8.0e3 + M_P, meson_charge=meson_charge,
-                                     solid_angle_cut=0.00924, n_samples=20, n_pot=1,
-                                     horn_current=polarization*300.0, meson_species=meson_type)
-
-xs, ys, zs = rkhornsim2.simulate_with_histories()
-
-horn_start = rkhornsim2.rksolver.horn_start
-horn_end = rkhornsim2.rksolver.horn_end
-
-# Plot the horn boundaries
-z_values = np.linspace(0.0, 1.9, 50)
-y_inner = rkhornsim2.rksolver.inner_radius(z_values)
-
-fig = plt.figure(figsize=(20,10))
-ax = fig.add_subplot(111)
-
-plt.hlines(y=[-0.3, 0.3], xmin=horn_start, xmax=horn_end, color="k", ls="dotted")
-plt.vlines(x=[horn_start, horn_end], ymin=-0.3, ymax=0.3, color="k", ls="dotted")
-plt.plot(z_values, y_inner, color="k")
-plt.plot(z_values, -y_inner, color="k")
-
-for i in range(rkhornsim2.n_samples):
-    plt.plot(zs[i], ys[i], color="k", markersize=1.0, alpha=0.5, marker='x', linewidth=1.0)
-
-
-# plot the x component of the B field
-z_vals_fine = np.linspace(0.0, 2.0, 200)
-y_vals_fine = np.linspace(-0.5, 0.5, 200)
-Z, Y = np.meshgrid(z_vals_fine, y_vals_fine)
-BMAG = np.zeros_like(Z)
-for i, z in enumerate(z_vals_fine):
-    for j, y in enumerate(y_vals_fine):
-        BMAG[i,j] = rkhornsim2.rksolver.bfield(0.0, Y[i,j], Z[i,j])[0]
-
-plt.imshow(BMAG, extent=[z_vals_fine.min(), z_vals_fine.max(), y_vals_fine.min(), y_vals_fine.max()],
-           origin='lower', aspect='auto', cmap='seismic')
-cbar = fig.colorbar(label=r'$B_x$ [T]')
-cbar.ax.yaxis.set_label_size(18)  # For vertical colorbar
-cbar.ax.tick_params(labelsize=18)
-
-ax.set_aspect('equal')
-
-plt.ylabel(r"$y$ [m]", fontsize=18)
-plt.xlabel(r"$z$ [m]", fontsize=18)
-plt.ylim((-0.4,0.4))
-plt.xlim((0.0, 2.0))
-plt.xticks(fontsize=18)
-plt.yticks(fontsize=18)
-plt.tight_layout()
-plt.show()
-plt.close()
+if __name__ == "__main__":
+    main()
