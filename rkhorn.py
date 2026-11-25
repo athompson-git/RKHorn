@@ -62,8 +62,11 @@ def runge_kutta_coupled(t, x, y, z, dt, dxdt, dydt, dzdt):
 class ChargedPionFluxMiniBooNE:
     def __init__(self, proton_energy=8938.0, meson_charge=1.0, solid_angle_cut=0.00924,
                  n_samples=10000, n_pot=18.75e20, horn_current=174.0, meson_species="pi_plus",
-                 step_size_ns=0.1, verbose=False, absorption="reaction"):
+                 step_size_ns=0.1, verbose=False, absorption="reaction",
+                 skin_depth=1.4e-3, air=True):
         self.n_samples = n_samples
+        self.air = air
+        self.beam_stop_z = 50.0
         self.kaon_sw_only = False
         self.solid_angle_cut = solid_angle_cut
         self.charge = meson_charge
@@ -108,7 +111,8 @@ class ChargedPionFluxMiniBooNE:
 
         self.rksolver = RKHorn(horn_current=horn_current, particle_mass=self.meson_mass,
                                particle_charge=self.charge, step_size_ns=step_size_ns,
-                               particle_lifetime=self.meson_lifetime, absorption=absorption)
+                               particle_lifetime=self.meson_lifetime, absorption=absorption,
+                               skin_depth=skin_depth)
         if self.meson_mass == M_K:
             self.rksolver.xs_scale = KAON_TO_PION_XS
         self.meson_flux_pre_horn = None
@@ -168,10 +172,10 @@ class ChargedPionFluxMiniBooNE:
         return np.array([p_list*1000.0, theta_list, pi_plus_wgts]).transpose()
 
     def in_decay_volume(self, decay_pos, start_pos=None, direction=None):
-        beam_stop, pipe_radius = 50.0, 0.9144
+        beam_stop, pipe_radius = self.beam_stop_z, 0.9144
         coll_z1, coll_z2, coll_r1, coll_r2 = 2.59, 4.73, 0.30, 0.355
         z = decay_pos[2]
-        if z > beam_stop or sqrt(decay_pos[0]**2 + decay_pos[1]**2) > pipe_radius:
+        if z < 0.0 or z > beam_stop or sqrt(decay_pos[0]**2 + decay_pos[1]**2) > pipe_radius:
             return 0.0
         if start_pos is not None and z > coll_z1 and direction[2] > 0.0:
             for z_check in [coll_z1, min(z, coll_z2)]:
@@ -180,6 +184,20 @@ class ChargedPionFluxMiniBooNE:
                 if sqrt(point[0]**2 + point[1]**2) > aperture:
                     return 0.0
         return 1.0
+
+    def air_optical_depth(self, p: float, length: float) -> float:
+        """Optical depth of air for hadronic absorption.
+
+        Args:
+            p: Meson momentum in MeV.
+            length: Path length in meters.
+        """
+        absorption = self.rksolver.absorption
+        if not self.air or absorption is None:
+            return 0.0
+        kind = "prod" if absorption == "reaction" else "ine"
+        sigma_mb = self.rksolver.xs_scale * pion_air_xs(p/1.0e3, self.charge, kind)
+        return float(AIR_NUCLEI_PER_CM3 * sigma_mb*1e-27 * 100.0*length)
 
     def focus_pions(self, discard_zeros=False, verbose=False):
         self.pip_p_post_horn = []
@@ -192,14 +210,16 @@ class ChargedPionFluxMiniBooNE:
         self.kept_rows = []
         phis = np.random.uniform(0.0, 2*pi, self.n_samples)
         self.phi0 = phis
+        proper_times = self.meson_lifetime * np.random.exponential(1.0, self.n_samples)
+        decay_draws = np.random.exponential(1.0, self.n_samples)
         for i, pflux in enumerate(tqdm(self.meson_flux_pre_horn)):
             p = pflux[0]
             theta = pflux[1]
             wgt = pflux[2]
-            
+
             self.rksolver.set_new_particle(r0=[self.x0[i], self.y0[i], self.z0[i]],
                                            p0=[p*cos(phis[i])*sin(theta), p*sin(phis[i])*sin(theta), p*cos(theta)],
-                                           charge=self.charge)
+                                           charge=self.charge, proper_time=proper_times[i])
             self.rksolver.simulate(discard_history=True)
 
             p_final = sqrt(self.rksolver.px[-1]**2 + self.rksolver.py[-1]**2 + self.rksolver.pz[-1]**2)
@@ -210,7 +230,7 @@ class ChargedPionFluxMiniBooNE:
 
             # Handle the decays
             if self.rksolver.decay_pos is not None:  # if the decay already happened in the target or horn
-                decay_in_vol = self.in_decay_volume(self.rksolver.decay_pos)
+                decay_in_vol = 0.0 if self.rksolver.captured else self.in_decay_volume(self.rksolver.decay_pos)
 
                 if discard_zeros:
                     if decay_in_vol < 1.0:
@@ -227,12 +247,15 @@ class ChargedPionFluxMiniBooNE:
 
             else:
                 # project out current vector to the MC decay position
-                decay_length = expon.rvs(scale=(p_final*self.meson_lifetime*0.01*C_LIGHT/self.meson_mass))
+                decay_length = decay_draws[i] * (p_final*self.meson_lifetime*0.01*C_LIGHT/self.meson_mass)
 
                 # get unit vector of current direction
                 pvec = np.array([self.rksolver.px[-1],self.rksolver.py[-1],self.rksolver.pz[-1]])
                 uvec = pvec / p_final
                 rvec = np.array([self.rksolver.x[-1],self.rksolver.y[-1],self.rksolver.z[-1]])
+
+                path_to_stop = max((self.beam_stop_z - rvec[2])/uvec[2], 0.0) if uvec[2] > 0.0 else self.beam_stop_z
+                wgt = wgt * exp(-self.air_optical_depth(p_final, min(decay_length, path_to_stop)))
 
                 projected_decay_pos = rvec + decay_length * uvec
                 
@@ -303,6 +326,8 @@ class ChargedPionFluxMiniBooNE:
             "theta_range_rad": (theta_min, theta_max),
             "absorption": self.rksolver.absorption,
             "step_ns": self.rksolver.dt*1.0e9,
+            "skin_depth_m": self.rksolver.skin_depth,
+            "air": self.air,
         }
         return record
 
@@ -370,11 +395,13 @@ class RKHorn:
                  horn_geometry_file="data/mb_horn_radius_by_z.txt", horn_outer_radius=0.3,
                  step_size_ns=0.1, target_radius=0.0048, target_length=0.711,
                  particle_lifetime=PION_LIFETIME, inner_conductor_thickness=0.003,
-                 absorption="reaction"):
+                 absorption="reaction", skin_depth=1.4e-3):
         self.target_radius = target_radius
         self.target_length = target_length
 
         self.conductor_thickness = inner_conductor_thickness
+        self.skin_depth = skin_depth
+        self.captured = False
 
         self.absorption = absorption
         self.xs_scale = 1.0
@@ -424,17 +451,36 @@ class RKHorn:
                 return ALUMINUM
         return None
 
+    def enclosed_current_fraction(self, r: float, r_outer: float) -> float:
+        """Fraction of the horn current inside radius r.
+
+        Args:
+            r: Radius in meters.
+            r_outer: Outer radius of the inner conductor in meters.
+        """
+        r_inner = r_outer - self.conductor_thickness
+        if r > r_outer:
+            return 1.0
+        if self.skin_depth is None or r <= r_inner:
+            return 0.0
+        depth = self.skin_depth
+        at_r = exp((r - r_outer)/depth) * (r - depth)
+        at_inner = exp((r_inner - r_outer)/depth) * (r_inner - depth)
+        return (at_r - at_inner) / (r_outer - depth - at_inner)
+
     def bfield(self, x, y, z):
         # takes in x, y, z in meters, returns in T
         r = np.sqrt(x**2 + y**2)
         theta = np.arctan2(y,x)
-        if (r <= self.inner_radius(z)) or (r > self.horn_max_radius):  # minimum radius of horn
+        r_outer = self.inner_radius(z)
+        if (r <= r_outer - self.conductor_thickness) or (r > self.horn_max_radius):  # minimum radius of horn
             return np.array([0.0, 0.0, 0.0])
         if z > self.horn_end:
             return np.array([0.0, 0.0, 0.0])
         if z < self.horn_start:
             return np.array([0.0, 0.0, 0.0])
-        return (MU0 * self.current / (2 * pi * r)) * np.array([-sin(theta), cos(theta), 0.0])
+        current = self.current * self.enclosed_current_fraction(r, r_outer)
+        return (MU0 * current / (2 * pi * r)) * np.array([-sin(theta), cos(theta), 0.0])
 
     # Momentum definitions, returning in units of MeV/s
     def dpxdtau(self, px, py, pz):
@@ -480,7 +526,8 @@ class RKHorn:
 
             # Bethe-Bloch energy loss
             delta_e = abs(dEdx(beta=p_new/energy, gamma=energy/self.m, M=self.m, Z=material["Z"], A=material["A"],
-                              rho=material["rho"], Imin=material["I"])*step_cm)  # (MeV/cm) * cm
+                              rho=material["rho"], Imin=material["I"],
+                              delta=density_effect(p_new/self.m, material))*step_cm)  # (MeV/cm) * cm
 
             p_after_loss = sqrt(power(np.clip(energy - delta_e, a_min=self.m, a_max=np.inf), 2) - self.m**2)
 
@@ -499,7 +546,8 @@ class RKHorn:
         self.z.append(z_mid + half_step * pz_new / energy)
 
     def set_new_particle(self, r0=[0.0, 0.0, 0.0], p0 =[0.0, 0.0, 10.0],
-                         particle_mass=None, charge=1.0, particle_lifetime=None):
+                         particle_mass=None, charge=1.0, particle_lifetime=None,
+                         proper_time=None):
         # reset initial conditions
         if particle_mass is None:
             particle_mass = self.m
@@ -507,9 +555,10 @@ class RKHorn:
             self.tau = particle_lifetime
         self.is_alive = True
         self.decay_pos = None
+        self.captured = False
         self.optical_depth = 0.0
         self.n_steps = 0
-        self.proper_time_left = np.random.exponential(self.tau)
+        self.proper_time_left = np.random.exponential(self.tau) if proper_time is None else proper_time
         self.t = [0.0]
         self.x = [r0[0]]
         self.y = [r0[1]]
@@ -554,6 +603,7 @@ class RKHorn:
             if self.px[-1]**2 + self.py[-1]**2 + self.pz[-1]**2 <= 0.0:
                 self.is_alive = False
                 self.decay_pos = [self.x[-1], self.y[-1], self.z[-1]]
+                self.captured = self.q < 0.0
 
             p_now = sqrt(self.px[-1]**2 + self.py[-1]**2 + self.pz[-1]**2)
             self.proper_time_left -= self.dt * self.tau / lab_lifetime(p_now, self.m, self.tau)
@@ -583,7 +633,7 @@ def forced_detector_flux(meson_flux, m_meson=M_PI, m_lepton=M_MU, br=1.0, det_po
     """
     p, theta = meson_flux[:,0], meson_flux[:,1]
     r_decay = meson_flux[:,2:5]
-    wgt = meson_flux[:,6]
+    wgt = meson_flux[:,5]*meson_flux[:,6]
     phi = meson_flux[:,7] if meson_flux.shape[1] > 7 else np.random.uniform(0.0, 2*pi, p.shape[0])
 
     energy = sqrt(p**2 + m_meson**2)
@@ -599,6 +649,38 @@ def forced_detector_flux(meson_flux, m_meson=M_PI, m_lepton=M_MU, br=1.0, det_po
     e_nu_rest = (m_meson**2 - m_lepton**2) / (2*m_meson)
 
     return e_nu_rest*doppler, wgt * br * doppler**2 / (4*pi*power(100.0*dist, 2))
+
+
+def disc_averaged_flux(meson_flux: np.ndarray, m_meson: float = M_PI,
+                       m_lepton: float = M_MU, br: float = 1.0,
+                       radius: float = 6.106,
+                       center: tuple = (0.0, 1.9, 541.0),
+                       n_points: int = 32) -> tuple:
+    """Neutrino flux averaged over a disc facing the beam.
+
+    Args:
+        meson_flux: Table of decayed mesons, as forced_detector_flux.
+        m_meson: Mass of the meson in MeV.
+        m_lepton: Mass of the charged lepton in MeV.
+        br: Branching ratio of the decay.
+        radius: Radius of the disc in meters.
+        center: Position of the disc center in meters.
+        n_points: Number of points that sample the disc.
+
+    Returns:
+        E_nu [MeV] and flux, one block of rows per disc point.
+    """
+    index = np.arange(n_points) + 0.5
+    rho = radius * sqrt(index/n_points)
+    angle = pi * (3.0 - sqrt(5.0)) * index
+    energies, weights = [], []
+    for dx, dy in zip(rho*cos(angle), rho*sin(angle)):
+        det_pos = (center[0] + dx, center[1] + dy, center[2])
+        e_nu, flux = forced_detector_flux(meson_flux, m_meson, m_lepton, br,
+                                          det_pos)
+        energies.append(e_nu)
+        weights.append(flux/n_points)
+    return np.concatenate(energies), np.concatenate(weights)
 
 
 
@@ -665,7 +747,7 @@ class ChargedMesonNeutrinoFlux:
             y = m[3]
             z = m[4]
 
-            flux_wgt = m[6]
+            flux_wgt = m[5]*m[6]
 
             meson_p4.set_p4(sqrt(p_m**2 + self.mm**2), p_m*sin(theta_m)*cos(phis[i]),
                                                         p_m*sin(theta_m)*sin(phis[i]),
