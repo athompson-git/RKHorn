@@ -82,7 +82,7 @@ def pion_nucleus_xs(p, charge=1, material="Be", kind="ine"):
 
 
 # Sanford-Wang and Feynman scaling diff xs
-def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_only=False):
+def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_only=False, params=None):
     p_beam = p_proton
     mt = M_P
     # Sanford-Wang Parameterization
@@ -96,6 +96,8 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_on
         c7 = 0.0868
         c8 = 9.686
         c9 = 1.0
+        if params is not None:
+            c1, c2, c3, c4, c5, c6, c7, c8, c9 = params
         #c1, c2, c3, c4, c5, c6, c7, c8, c9 = 1.20245,1.08, 2.15, 2.31,1.98,5.73,0.137,24.1, 1.0
         prefactor = c1 * power(p, c2) * np.clip(1 - p/(p_beam - c9), 0.0, None)
         exponential = exp(-c3*power(p,c4)/power(p_beam,c5) - c6*theta*(p-c7*p_beam*power(np.clip(cos(theta), 0.0, None),c8)))
@@ -111,6 +113,8 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_on
         c7 = 0.07338
         c8 = 8.329
         c9 = 1.0
+        if params is not None:
+            c1, c2, c3, c4, c5, c6, c7, c8, c9 = params
         prefactor = c1 * power(p, c2) * np.clip(1 - p/(p_beam - c9), 0.0, None)
         exponential = exp(-c3*power(p,c4)/power(p_beam,c5) - c6*theta*(p-c7*p_beam*power(np.clip(cos(theta), 0.0, None),c8)))
         return prefactor * exponential
@@ -127,6 +131,8 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_on
             c7 = 0.26
             c8 = 10.63
             c9 = 2.04
+            if params is not None:
+                c1, c2, c3, c4, c5, c6, c7, c8, c9 = params
             #c1, c2, c3, c4, c5, c6, c7, c8, c9 = 1.20245,1.08, 2.15, 2.31,1.98,5.73,0.137,24.1, 1.0
             prefactor = c1 * power(p, c2) * np.clip(1 - p/(p_beam - c9), 0.0, None)
             exponential = exp(-c3*power(p,c4)/power(p_beam,c5) - c6*theta*(p-c7*p_beam*power(np.clip(cos(theta), 0.0, None),c8)))
@@ -149,6 +155,8 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_on
         c5 = 2.21
         c6 = 2.17
         c7 = 1.51
+        if params is not None:
+            c1, c2, c3, c4, c5, c6, c7 = params
         prefactor = c1 * p**2 / sqrt(p**2 + (M_K*1e-3)**2)
         return prefactor * (x_f <= 1.0) * exp(-c2*p_t - c3*power(x_f, c4) - c5*p_t**2 - c7*power(p_t*x_f, c6))
     
@@ -162,6 +170,8 @@ def meson_production_d2SdpdOmega(p, theta, p_proton, meson_type="pi_plus", sw_on
         c7 = 0.048
         c8 = 13.300
         c9 = 1.278
+        if params is not None:
+            c1, c2, c3, c4, c5, c6, c7, c8, c9 = params
         prefactor = c1 * power(p, c2) * np.clip(1 - p/(p_beam - c9), 0.0, None)
         exponential = exp(-c3*power(p,c4)/power(p_beam,c5) - c6*theta*(p-c7*p_beam*power(np.clip(cos(theta), 0.0, None),c8)))
         return prefactor * exponential
