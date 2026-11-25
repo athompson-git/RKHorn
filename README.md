@@ -21,7 +21,8 @@ The RKHorn classes implement a very basic set of approximations to model the cha
 * Similarly, we implement the Feynman-Scaling (FS) parameterization for $K^+$ production (a modified SW fit is also available)
 * The meson yield per proton-on-target is (probability that the proton has a reaction in the 71.1 cm target) $\times$ (meson production cross section) / (p-Be reaction cross section), where "reaction" means inelastic excluding quasi-elastic, 177.5 mb at 8.89 GeV/c
 * The charged mesons are propagated through the target and horn according to simple equations of motion solved by Runge-Kutta finite timestep propagation
-* When the mesons are in material (the beryllium target, 0.48 cm in radius, or the aluminum inner conductor of the horn), Bethe-Bloch energy loss with the density-effect correction is applied at each timestep and the meson weight is reduced by its probability of a hadronic interaction, $\exp(-n \sigma \ell)$
+* The target, its sleeve and fins, the horn and the collimator follow the geometry file of Fermilab's G4BNB beam simulation, [BooNE_50m.gdml](https://github.com/SBNSoftware/G4BNB/blob/v1.1.1/geometry/BooNE_50m.gdml)
+* When the mesons are in material (the beryllium target, its sleeve and fins, or the aluminum conductors of the horn), Bethe-Bloch energy loss with the density-effect correction is applied at each timestep and the meson weight is reduced by its probability of a hadronic interaction, $\exp(-n \sigma \ell)$
 * Each timestep update is governed by the Lorentz force law equation of motion, with an azimuthally symmetric magnetic field between the inner and outer conductors of the horn. The current enters the inner conductor over a skin depth of 1.4 mm, as in the nominal model of [3], so part of the field lies inside the aluminum
 * Mesons decay in flight with their own lifetime, inside the horn or downstream of it. A decay counts if it happens before the beam stop (50 m), inside the decay pipe (3 ft radius), and the meson cleared the collimator. Downstream of the horn the beamline is filled with air, which removes about 2% of the mesons. A negative meson that stops in material is captured by a nucleus and gives no neutrino
 * The neutrino flux at the detector is computed analytically from each decayed meson (see below). For the comparison with MiniBooNE it is averaged over the face of the detector
@@ -99,7 +100,7 @@ rkhornsim = ChargedPionFluxMiniBooNE(
     n_samples=20000, n_pot=1, horn_current=174.0)
 ```
 
-The meson is chosen with ```meson_species```: ```"pi_plus"```, ```"pi_minus"``` or ```"k_plus"``` (this also sets its charge, mass and lifetime). A positive ```horn_current``` focuses positive mesons (neutrino mode); use a negative current for antineutrino mode. Two further options switch off parts of the model: ```skin_depth=None``` puts all the horn current on the surface of the inner conductor, and ```air=False``` empties the beamline downstream of the horn. To simulate the beamspot, the production of the mesons, and the focusing, we call
+The meson is chosen with ```meson_species```: ```"pi_plus"```, ```"pi_minus"``` or ```"k_plus"``` (this also sets its charge, mass and lifetime). A positive ```horn_current``` focuses positive mesons (neutrino mode); use a negative current for antineutrino mode. Two further options switch off parts of the model: ```skin_depth=None``` puts all the horn current on the surface of the inner conductor, and ```air=False``` empties the beamline downstream of the horn. ```geometry="digitized"``` selects the earlier, simplified geometry (see "Validation"). To simulate the beamspot, the production of the mesons, and the focusing, we call
 ```python
 rkhornsim.simulate(theta_max=0.6)
 ```
@@ -123,7 +124,7 @@ e_nu_disc, flux_disc = disc_averaged_flux(mesons[in_beamline], m_meson=M_PI,
                                           br=BR_PI_MUNU)
 print(f"nu_mu flux over the detector: {flux_disc.sum():.2e} nu / cm^2 / POT")
 ```
-Both numbers are close to $6 \times 10^{-10}$ $\nu$ / cm$^2$ / POT, and the second is a few percent lower. ```decayed_flux_array()``` returns one row per meson with eight columns:
+Both numbers are between $5 \times 10^{-10}$ and $6 \times 10^{-10}$ $\nu$ / cm$^2$ / POT, and the second is a few percent lower. ```decayed_flux_array()``` returns one row per meson with eight columns:
 
 | Column | Quantity |
 |---|---|
@@ -192,7 +193,7 @@ plt.show()
 Giving us the following nice plot:
 ![Meson transport through the BNB focusing horn](./plots/horn_transport_174kA.png)
 
-Here we can see the pi+ tracks projected onto the y,z plane in black, on top of the horn field. The mesons are drawn uniformly in momentum up to 6.5 GeV and in angle up to 90 degrees, so most of these 20 tracks are energetic or leave through the side of the horn, and they bend only slightly. Their origins are always inside the BNB target inside the Horn boundary. The step-by-step tracking of each meson stops when it passes the downstream end of the horn (z = 1.94 m), goes backwards past z = 0, decays, stops in material, or after 10000 time steps. Downstream of the horn the mesons fly in a straight line to their decay point.
+Here we can see the pi+ tracks projected onto the y,z plane in black, on top of the horn field. The mesons are drawn uniformly in momentum up to 6.5 GeV and in angle up to 90 degrees, so most of these 20 tracks are energetic or leave through the side of the horn, and they bend only slightly. Their origins are always inside the BNB target inside the Horn boundary. The step-by-step tracking of each meson stops when it passes the downstream end of the horn (z = 1.77 m), goes backwards past z = 0, decays, stops in material, or after 10000 time steps. Downstream of the horn the mesons fly in a straight line to their decay point.
 
 The notebook ```jupyter/paper_plots.ipynb``` draws the same kind of tracks in three dimensions, colored by their transverse momentum at production:
 
@@ -237,7 +238,7 @@ plt.show()
 
 The left panel visualizes the effect of the focusing; the pions post-horn are now pointed to lower angles with respect to the beam line, and therefore their decay products (neutrinos) will have a higher flux within the detector solid angle downstream! Below 0.03 rad there are about eight times more pions after the horn than at production. We do not simulate the random walk as pions scatter through the target material (yet).
 
-The right panel shows the momentum distributions. The shape hardly changes, because the magnetic field does no work. The post-horn histogram is lower by about 13% overall (0.48 against 0.56 pions per POT), because the post-horn weights include hadronic absorption in the target, the horn conductor and the air.
+The right panel shows the momentum distributions. The shape hardly changes, because the magnetic field does no work. The post-horn histogram is lower by about 19% overall (0.45 against 0.56 pions per POT), because the post-horn weights include hadronic absorption in the target, its sleeve and fins, the horn conductors and the air.
 
 ## Validation
 
@@ -256,19 +257,28 @@ The ratio of the RKHorn flux to the published one, with the statistical error of
 
 | $E_\nu$ [MeV] | $\nu_\mu$ from $\pi^+$ | $\bar{\nu}_\mu$ from $\pi^-$ |
 |---|---|---|
-| 0 to 3000 | 1.16 $\pm$ 0.01 | 1.10 $\pm$ 0.01 |
-| 0 to 500 | 0.92 $\pm$ 0.02 | 0.90 $\pm$ 0.02 |
-| 500 to 1000 | 1.14 $\pm$ 0.02 | 1.15 $\pm$ 0.02 |
-| 1000 to 1500 | 1.38 $\pm$ 0.02 | 1.34 $\pm$ 0.02 |
-| 1500 to 2000 | 1.61 $\pm$ 0.04 | 1.82 $\pm$ 0.04 |
-| 2000 to 3000 | 1.98 $\pm$ 0.06 | 2.35 $\pm$ 0.07 |
+| 0 to 3000 | 1.06 $\pm$ 0.01 | 1.02 $\pm$ 0.01 |
+| 0 to 500 | 0.88 $\pm$ 0.02 | 0.86 $\pm$ 0.01 |
+| 500 to 1000 | 1.08 $\pm$ 0.02 | 1.09 $\pm$ 0.02 |
+| 1000 to 1500 | 1.23 $\pm$ 0.02 | 1.19 $\pm$ 0.02 |
+| 1500 to 2000 | 1.17 $\pm$ 0.03 | 1.28 $\pm$ 0.03 |
+| 2000 to 3000 | 1.31 $\pm$ 0.04 | 1.54 $\pm$ 0.05 |
 
-The integrated flux is 16% and 10% above the published prediction with no tuned parameters, and the spectrum is too hard above 1 GeV.
+The integrated flux is 6% and 2% above the published prediction with no tuned parameters. Above 1 GeV the $\nu_\mu$ flux is 17 to 31% too high.
 
-Measured on matched samples, the pieces of the model move the $\nu_\mu$ flux as follows. The step size is included as a numerical check.
+#### The geometry matters most
+
+Until this version the horn profile was digitized from a drawing, with no sleeve, fins or outer conductor. That profile put the narrow downstream section of the inner conductor 14.5 cm too far downstream and made the field region 17 cm too long. With it the ratio above 1.5 GeV was 1.6 to 2.4. The figure compares the two: the geometry (left), the ratio to the published $\nu_\mu$ flux (middle), and the angular distribution of $\pi^+$ above 3 GeV/c after the horn (right).
+
+![Horn geometry and flux before and after the change to the G4BNB geometry](./plots/geometry_before_after.png)
+
+Measured on matched samples, the pieces of the model move the $\nu_\mu$ flux as follows. The step size is included as a numerical check. The rows below the fins were measured with the earlier geometry.
 
 | Change | 0 to 3 GeV | 1.5 to 2 GeV | 2 to 3 GeV |
 |---|---|---|---|
+| horn profile and aluminium from the G4BNB file, against the digitized profile | $-4.1\%$ | $-24\%$ | $-35\%$ |
+| beryllium sleeve | $-2.1\%$ | $-3.1\%$ | $-3.6\%$ |
+| beryllium fins | $-1.8\%$ | $-2.6\%$ | $-2.2\%$ |
 | average over the detector, against one point on the axis | $-3.4\%$ | $-21\%$ | $-21\%$ |
 | skin effect in the inner conductor | $+1.7\%$ | $+10\%$ | $+22\%$ |
 | air downstream of the horn | $-2.0\%$ | $-2.5\%$ | $-2.3\%$ |
@@ -295,12 +305,12 @@ The text tables in ```data/``` (decays in the open beamline only, eight columns)
 | ```data/pickle``` | full meson samples, about 9 MB each |
 | ```data/tracks``` | a few pion trajectories for the 3D figure |
 | ```data/systematics``` | flux uncertainty envelopes from ```systematics.py``` |
-| ```data/bsm_data``` | new-physics fluxes from ```new_physics.py``` |
+| ```data/bsm_data``` | new-physics fluxes from ```new_physics.py``` (not stored in the repository; run the script to create them) |
 | ```data/public_digitized_fluxes``` | published MiniBooNE fluxes |
 | ```plots/paper``` | figures saved by ```jupyter/paper_plots.ipynb``` |
 | ```plots/``` | figures shown in this README |
 
-Notebooks in ```jupyter/```: ```example.ipynb``` is a walk-through of the code, ```plot_fluxes.ipynb``` has quick-look plots of the saved samples, and ```paper_plots.ipynb``` makes and saves the figures of the paper. The last two only read saved data.
+Notebooks in ```jupyter/```: ```example.ipynb``` is a walk-through of the code, ```plot_fluxes.ipynb``` has quick-look plots of the saved samples, and ```paper_plots.ipynb``` makes and saves the figures of the paper. The last two only read saved data. ```paper_plots.ipynb``` also reads the new-physics fluxes, which are not stored in the repository, so run ```python new_physics.py``` once before it (about two minutes).
 
 ## Production uncertainties
 
@@ -328,11 +338,11 @@ The couplings ($g = 10^{-4}$ and $\sin\theta = 10^{-4}$) are benchmarks chosen f
 
 ## TODO
 * secondary meson production by re-interacting protons and neutrons (about 8-10% of the $\nu_\mu$ flux)
-* multiple scattering and quasi-elastic scattering of mesons in material; the target sleeve and fins; the outer conductor and end cap of the horn
+* multiple scattering and quasi-elastic scattering of mesons in material
 * neutrinos from muon decay and from three-body kaon decays; $K^-$ and $K^0$ production
 * implementing custom horn geometries
 * implementing alternative target materials
 
 ## Implementing a custom horn geometry
 
-This feature is not yet implemented in a user-friendly way, but you may hack the file ```data/mb_horn_radius_by_z.txt``` which encodes the shape of the inner conductor of the horn as a function of z position.
+This feature is not yet implemented in a user-friendly way, but you may hack the file ```data/bnb_horn_g4bnb.txt```, which gives four radii of the horn as a function of z position: the bore, the inner and outer edge of the field region, and the outside of the body. Aluminum fills the space between the first two and between the last two. A file with two columns (z and the outer radius of the inner conductor, as in ```data/mb_horn_radius_by_z.txt```) is also accepted and gets a 3 mm wall. Pass the file name to ```RKHorn``` as ```horn_geometry_file```.
