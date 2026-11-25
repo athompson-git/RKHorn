@@ -1,1 +1,3 @@
 __pycache__
+data/bsm_data/*
+!data/bsm_data/.gitkeep
