@@ -211,31 +211,6 @@ class Decay2Body:
         self.p1_lab_4vectors = [lorentz_boost(p1, v_in) for p1 in self.p1_cm_4vectors]
         self.p2_lab_4vectors = [lorentz_boost(p2, v_in) for p2 in self.p2_cm_4vectors]
         self.weights = np.ones(self.n_samples) / self.n_samples
-    
-    def decay_from_flux(self):
-        p_cm = power((self.mp**2 - (self.m2 - self.m1)**2)*(self.mp**2 - (self.m2 + self.m1)**2), 0.5)/(2*self.mp)
-        e1_cm = sqrt(p_cm**2 + self.m1**2)
-        e2_cm = sqrt(p_cm**2 + self.m2**2)
-
-        # Draw random variates on the 2-sphere
-        phi1_rnd = 2*pi*np.random.ranf(self.n_samples)
-        theta1_rnd = arccos(1 - 2*np.random.ranf(self.n_samples))
-        phi2_rnd = np.pi + phi1_rnd
-        theta2_rnd = np.pi - theta1_rnd
-
-        v_in = [-lv.get_3velocity() for lv in self.lv_p]
-
-        self.p1_cm_4vectors = [LorentzVector(e1_cm,
-                            p_cm*cos(phi1_rnd[i])*sin(theta1_rnd[i]),
-                            p_cm*sin(phi1_rnd[i])*sin(theta1_rnd[i]),
-                            p_cm*cos(theta1_rnd[i])) for i in range(self.n_samples)]
-        self.p2_cm_4vectors = [LorentzVector(e2_cm,
-                            p_cm*cos(phi2_rnd[i])*sin(theta2_rnd[i]),
-                            p_cm*sin(phi2_rnd[i])*sin(theta2_rnd[i]),
-                            p_cm*cos(theta2_rnd[i])) for i in range(self.n_samples)]
-        self.p1_lab_4vectors = [lorentz_boost(p1, v_in) for p1 in self.p1_cm_4vectors]
-        self.p2_lab_4vectors = [lorentz_boost(p2, v_in) for p2 in self.p2_cm_4vectors]
-        self.weights = np.ones(self.n_samples)
 
 
 
@@ -258,14 +233,3 @@ def lorentz_boost(momentum: LorentzVector, v: Vector3):
                     [-gamma*beta*n[2], (gamma-1)*n[2]*n[0], (gamma-1)*n[2]*n[1], 1+(gamma-1)*n[2]*n[2]]])
     boosted_p4 = mat @ momentum.pmu
     return LorentzVector(boosted_p4[0], boosted_p4[1], boosted_p4[2], boosted_p4[3])
-
-
-
-
-def decay_quantile(u, p, m, width_gamma):
-    # Quantile/PPF function to generate decay positions for a given lifetime and momentum.
-    # momentum in lab frame p
-    # decay width width_gamma in MeV
-    # mass of decaying particle m
-    # l and dl in meters
-    return (METER_BY_MEV * p / width_gamma / m) * log((sqrt(u) + 1)/(1 - u))

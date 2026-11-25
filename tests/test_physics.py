@@ -213,6 +213,18 @@ def test_forced_detector_flux_against_rejection_sampling():
     close(np.sum(weights)/area, np.sum(flux), 0.06)
 
 
+def test_rejection_sampling_uses_saved_phi():
+    np.random.seed(11)
+    for phi in (np.pi, 0.0):
+        mesons = np.array([[2000.0, 0.02, 10.0, 0.0, 41.0, 1.0, 1.0, phi]])
+        _, flux = forced_detector_flux(mesons, m_meson=M_PI, br=BR_PI_MUNU)
+        brute = ChargedMesonNeutrinoFlux(mesons, meson_type="pion", n_samples=40000)
+        with contextlib.redirect_stderr(io.StringIO()):
+            _, weights = brute.simulate_neutrinos_from_decayed_flux()
+        area = np.pi * (100.0*brute.det_radius)**2
+        close(np.sum(weights)/area, np.sum(flux), 0.15)
+
+
 if __name__ == "__main__":
     tests = [(name, func) for name, func in sorted(globals().items()) if name.startswith("test_")]
     failed = 0

@@ -623,10 +623,7 @@ class ChargedMesonNeutrinoFlux:
             raise Exception("Meson type not understood!", meson_type)
         self.m_lepton = m_lepton
         self.det_dist = 541
-        self.dump_dist = 50
-        self.det_length = 12
         self.det_radius = 6.106
-        self.solid_angles = []
         self.energy_cut = energy_cut
         self.nsamples = n_samples
         self.energies = []
@@ -646,41 +643,6 @@ class ChargedMesonNeutrinoFlux:
         return forced_detector_flux(self.meson_flux, m_meson=self.mm, m_lepton=self.m_lepton, br=self.br(),
                                     det_pos=(0.0, 0.0, self.det_dist))
 
-    def simulate_neutrinos(self):
-        m_m = self.mm
-
-        # Reproduce the neutrino flux abundance
-        p_k = self.meson_flux[:,0]
-        wgt_k = self.meson_flux[:,2]
-
-        theta_rnd = arccos(1 - 2*np.random.ranf(self.nsamples))
-        c_rnd = cos(theta_rnd)
-        e_nu = (m_m**2 - M_MU**2)/(2*m_m)
-        p_nu_z = e_nu * c_rnd
-
-        beta = p_k / sqrt(p_k**2 + m_m**2)
-        gamma = np.power(1-beta**2, -0.5)
-        e_nu_lab = gamma*(e_nu + beta*p_nu_z)
-        p_nu_z_lab = gamma*(p_nu_z + beta*e_nu)
-        cos_lab = p_nu_z_lab / e_nu_lab
-
-        # TODO: simulate decay position
-        decay_lengths = METER_BY_MEV * p_k / self.partial_width() / self.mm
-        u = []
-        for length in decay_lengths:
-            umax = exp(-2*self.dump_dist/length) * power(exp(self.dump_dist/length) - 1, 2) \
-                if length > 1.0 else 1.0
-            u.append(np.random.uniform(0.0, min(umax, 1.0)))
-        
-        x = decay_quantile(np.array(u), p_k, self.mm, self.partial_width())
-        
-        # Append decay positions and solid angle cosines for the geometric acceptance of each meson decay
-        self.decay_pos.append(x)
-        solid_angle_cosine = cos(arctan(self.det_length/(self.det_dist-x)/2))
-
-        wgt_nu = self.br() * wgt_k * heaviside(cos_lab - solid_angle_cosine, 0.0)  * (2 * (max(e_nu_lab)-min(e_nu_lab)))
-        return e_nu_lab, wgt_nu
-    
     def simulate_neutrinos_from_decayed_flux(self):
         self.energies = []
         self.cosines = []
@@ -691,7 +653,10 @@ class ChargedMesonNeutrinoFlux:
 
         meson_p4 = LorentzVector(self.mm, 0.0, 0.0, 0.0)
         mc = Decay2Body(p_parent=LorentzVector(self.mm, 0.0, 0.0, 0.0), m1=0.0, m2=self.m_lepton, n_samples=self.nsamples)
-        phis = np.random.uniform(0.0, 2*pi, self.meson_flux.shape[0]*self.nsamples)
+        if self.meson_flux.shape[1] > 7:
+            phis = self.meson_flux[:,7]
+        else:
+            phis = np.random.uniform(0.0, 2*pi, self.meson_flux.shape[0])
 
         for i, m in tqdm(enumerate(self.meson_flux)):
             p_m = m[0]
