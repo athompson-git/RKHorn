@@ -33,7 +33,8 @@ def close(value, expected, rel):
 
 def free_tracker(**kwargs):
     rk = RKHorn(target_length=-1.0, inner_conductor_thickness=0.0, absorption=None,
-                particle_lifetime=1e9, **kwargs)
+                particle_lifetime=1e9, horn_geometry_file="data/mb_horn_radius_by_z.txt",
+                sleeve=False, fins=False, **kwargs)
     return rk
 
 
@@ -122,6 +123,50 @@ def test_skin_effect_current_fraction():
     assert not np.any(rk.bfield(r_outer - 1.5*wall, 0.0, 0.5))
     no_skin = RKHorn(horn_current=174.0, skin_depth=None)
     assert not np.any(no_skin.bfield(r_outer - 0.5*wall, 0.0, 0.5))
+
+
+def test_g4bnb_horn_profile():
+    rk = RKHorn(horn_current=174.0)
+    close(rk.horn_end, 1.769075, 1e-5)
+    for z in [0.2, 0.6, 1.571]:
+        r_bore, r_cavity_in, r_cavity_out, r_body = rk.profile_scalar(z)
+        close(r_bore, 0.019, 1e-3)
+        close(r_cavity_in, 0.022, 1e-3)
+        close(r_cavity_out, 0.300, 1e-3)
+        close(r_body, 0.3254, 1e-3)
+    close(rk.profile_scalar(1.17)[1], 0.0654, 1e-6)
+    close(rk.profile_scalar(0.0)[1], 0.070, 1e-3)
+    assert rk.material_at(0.0205, 0.3)["name"] == "Al"
+    assert rk.material_at(0.31, 0.3)["name"] == "Al"
+    assert rk.material_at(0.10, 0.3) is None
+    assert rk.material_at(0.16, 1.7676)["name"] == "Al"
+    assert rk.material_at(0.10, 1.7676) is None
+    assert not np.any(rk.bfield(0.16, 0.0, 1.7676))
+    assert np.any(rk.bfield(0.10, 0.0, 1.70))
+
+    old = RKHorn(horn_current=174.0, horn_geometry_file="data/mb_horn_radius_by_z.txt", sleeve=False, fins=False)
+    close(old.horn_end, 1.939271, 1e-5)
+    close(old.profile_scalar(1.5711)[1], 0.0400, 0.01)
+    assert old.material_at(0.31, 0.3) is None
+
+
+def test_target_sleeve_and_fins():
+    rk = RKHorn(horn_current=174.0)
+    assert rk.material_at(0.0142, 0.3)["name"] == "Be"
+    assert rk.material_at(0.0142, -0.05)["name"] == "Be"
+    assert rk.material_at(0.0142, 0.73) is None
+    assert rk.material_at(0.016, 0.3) is None
+    assert RKHorn(sleeve=False).material_at(0.0142, 0.3) is None
+
+    radius, z_in_fin, z_between = 0.009, 0.05, 0.10
+    phi = np.linspace(0.0, 2*np.pi, 20000, endpoint=False)
+    hits = [rk.material_at(radius, z_in_fin, radius*np.cos(a), radius*np.sin(a)) is not None for a in phi]
+    close(np.mean(hits), 3*FIN_THICKNESS_M/(2*np.pi*radius), 0.02)
+    for degrees in FIN_AZIMUTHS_DEG:
+        a = np.radians(degrees)
+        assert rk.material_at(radius, z_in_fin, radius*np.cos(a), radius*np.sin(a))["name"] == "Be"
+        assert rk.material_at(radius, z_between, radius*np.cos(a), radius*np.sin(a)) is None
+    assert RKHorn(fins=False).material_at(radius, z_in_fin, radius*np.cos(a), radius*np.sin(a)) is None
 
 
 def test_gyroradius_in_uniform_field():

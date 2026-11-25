@@ -65,10 +65,23 @@ class ChargedPionFluxMiniBooNE:
     def __init__(self, proton_energy=8938.0, meson_charge=1.0, solid_angle_cut=0.00924,
                  n_samples=10000, n_pot=18.75e20, horn_current=174.0, meson_species="pi_plus",
                  step_size_ns=0.1, verbose=False, absorption="reaction",
-                 skin_depth=1.4e-3, air=True):
+                 skin_depth=1.4e-3, air=True, geometry="g4bnb",
+                 sleeve=None, fins=None):
         self.n_samples = n_samples
         self.air = air
-        self.beam_stop_z = 50.0
+        self.geometry = geometry
+        if geometry == "g4bnb":
+            horn_file, target_radius, target_length = "data/bnb_horn_g4bnb.txt", 0.0047625, 0.7112
+            self.collimator = (3.0351, 5.1687, 0.30, 0.355)
+            self.beam_stop_z = 50.2787
+        elif geometry == "digitized":
+            horn_file, target_radius, target_length = "data/mb_horn_radius_by_z.txt", 0.0048, 0.711
+            self.collimator = (2.59, 4.73, 0.30, 0.355)
+            self.beam_stop_z = 50.0
+        else:
+            raise ValueError(f"unknown geometry: {geometry}")
+        sleeve = (geometry == "g4bnb") if sleeve is None else sleeve
+        fins = (geometry == "g4bnb") if fins is None else fins
         self.kaon_sw_only = False
         self.solid_angle_cut = solid_angle_cut
         self.charge = meson_charge
@@ -114,7 +127,9 @@ class ChargedPionFluxMiniBooNE:
         self.rksolver = RKHorn(horn_current=horn_current, particle_mass=self.meson_mass,
                                particle_charge=self.charge, step_size_ns=step_size_ns,
                                particle_lifetime=self.meson_lifetime, absorption=absorption,
-                               skin_depth=skin_depth)
+                               skin_depth=skin_depth, horn_geometry_file=horn_file,
+                               target_radius=target_radius, target_length=target_length,
+                               sleeve=sleeve, fins=fins)
         if self.meson_mass == M_K:
             self.rksolver.xs_scale = KAON_TO_PION_XS
         self.meson_flux_pre_horn = None
@@ -175,7 +190,7 @@ class ChargedPionFluxMiniBooNE:
 
     def in_decay_volume(self, decay_pos, start_pos=None, direction=None):
         beam_stop, pipe_radius = self.beam_stop_z, 0.9144
-        coll_z1, coll_z2, coll_r1, coll_r2 = 2.59, 4.73, 0.30, 0.355
+        coll_z1, coll_z2, coll_r1, coll_r2 = self.collimator
         z = decay_pos[2]
         if z < 0.0 or z > beam_stop or sqrt(decay_pos[0]**2 + decay_pos[1]**2) > pipe_radius:
             return 0.0
@@ -330,6 +345,9 @@ class ChargedPionFluxMiniBooNE:
             "step_ns": self.rksolver.dt*1.0e9,
             "skin_depth_m": self.rksolver.skin_depth,
             "air": self.air,
+            "geometry": self.geometry,
+            "sleeve": self.rksolver.sleeve,
+            "fins": self.rksolver.fins,
         }
         return record
 
@@ -394,12 +412,15 @@ class RKHorn:
     dat file of horn geometry (z in cm, r in cm)
     """
     def __init__(self, particle_mass=M_PI, particle_charge=1.0, horn_current=170.0,
-                 horn_geometry_file="data/mb_horn_radius_by_z.txt", horn_outer_radius=0.3,
-                 step_size_ns=0.1, target_radius=0.0048, target_length=0.711,
+                 horn_geometry_file="data/bnb_horn_g4bnb.txt", horn_outer_radius=0.3,
+                 step_size_ns=0.1, target_radius=0.0047625, target_length=0.7112,
                  particle_lifetime=PION_LIFETIME, inner_conductor_thickness=0.003,
-                 absorption="reaction", skin_depth=1.4e-3):
+                 absorption="reaction", skin_depth=1.4e-3, sleeve=True, fins=True):
         self.target_radius = target_radius
         self.target_length = target_length
+        self.sleeve = sleeve
+        self.fins = fins
+        self.fin_axes = [(math.cos(math.radians(a)), math.sin(math.radians(a))) for a in FIN_AZIMUTHS_DEG]
 
         self.conductor_thickness = inner_conductor_thickness
         self.skin_depth = skin_depth
@@ -437,14 +458,90 @@ class RKHorn:
 
         fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), horn_geometry_file)
         self.horn_radius_by_z = np.genfromtxt(fpath)
-        self.horn_z = (1e-2*self.horn_radius_by_z[:,0]).tolist()
-        self.horn_r = (1e-2*self.horn_radius_by_z[:,1]).tolist()
+        table = 1e-2*self.horn_radius_by_z
+        if table.shape[1] >= 5:
+            self.horn_profile = table[:,:5]
+        else:
+            outer = np.full(table.shape[0], horn_outer_radius)
+            self.horn_profile = np.column_stack([table[:,0], table[:,1] - inner_conductor_thickness,
+                                                 table[:,1], outer, outer])
+        self.horn_z = self.horn_profile[:,0].tolist()
+        self.horn_r = self.horn_profile[:,2].tolist()
+        self.horn_rows = self.horn_profile[:,1:].tolist()
+        self.profile_z = None
+        self.profile_radii = None
         self.horn_start = 0.0  # meters
-        self.horn_end = max(1e-2*self.horn_radius_by_z[:,0])  # meters
-        self.horn_max_radius = horn_outer_radius
+        self.horn_end = max(self.horn_z)  # meters
+        self.horn_max_radius = float(np.max(self.horn_profile[:,3]))
     
     def inner_radius(self, z):
-        return np.interp(z, 1e-2*self.horn_radius_by_z[:,0], 1e-2*self.horn_radius_by_z[:,1])
+        return np.interp(z, self.horn_profile[:,0], self.horn_profile[:,2])
+
+    def bore_radius(self, z: np.ndarray) -> np.ndarray:
+        """Inner surface of the inner conductor.
+
+        Args:
+            z: Positions along the beam in meters.
+        """
+        return np.interp(z, self.horn_profile[:,0], self.horn_profile[:,1])
+
+    def outer_radius(self, z: np.ndarray) -> np.ndarray:
+        """Inner surface of the outer conductor.
+
+        Args:
+            z: Positions along the beam in meters.
+        """
+        return np.interp(z, self.horn_profile[:,0], self.horn_profile[:,3])
+
+    def body_radius(self, z: np.ndarray) -> np.ndarray:
+        """Outer surface of the outer conductor.
+
+        Args:
+            z: Positions along the beam in meters.
+        """
+        return np.interp(z, self.horn_profile[:,0], self.horn_profile[:,4])
+
+    def profile_scalar(self, z: float) -> list:
+        """The four horn radii at one position.
+
+        Args:
+            z: Position along the beam in meters.
+
+        Returns:
+            Bore, cavity inner, cavity outer and body radius.
+        """
+        if z == self.profile_z:
+            return self.profile_radii
+        zs, rows = self.horn_z, self.horn_rows
+        if z <= zs[0]:
+            radii = rows[0]
+        elif z >= zs[-1]:
+            radii = rows[-1]
+        else:
+            i = bisect_right(zs, z)
+            lower, upper = rows[i-1], rows[i]
+            fraction = (z - zs[i-1])/(zs[i] - zs[i-1])
+            radii = [(b - a)*fraction + a for a, b in zip(lower, upper)]
+        self.profile_z, self.profile_radii = z, radii
+        return radii
+
+    def in_fin(self, x: float, y: float, z: float) -> bool:
+        """Tells whether a point lies inside a target fin.
+
+        Args:
+            x: Horizontal position in meters.
+            y: Vertical position in meters.
+            z: Position along the beam in meters.
+        """
+        station, offset = divmod(z - FIN_FIRST_Z_M, FIN_PITCH_M)
+        if station < 0 or station >= FIN_STATIONS or offset > FIN_LENGTH_M:
+            return False
+        for cosine, sine in self.fin_axes:
+            along = x*cosine + y*sine
+            if (FIN_INNER_RADIUS_M <= along <= FIN_OUTER_RADIUS_M
+                    and abs(y*cosine - x*sine) <= 0.5*FIN_THICKNESS_M):
+                return True
+        return False
 
     def inner_radius_scalar(self, z: float) -> float:
         """Conductor radius at one position, as inner_radius.
@@ -460,23 +557,30 @@ class RKHorn:
         i = bisect_right(zs, z)
         return (rs[i] - rs[i-1])/(zs[i] - zs[i-1])*(z - zs[i-1]) + rs[i-1]
 
-    def material_at(self, r, z):
+    def material_at(self, r, z, x=None, y=None):
         if (r < self.target_radius) and (0.0 <= z <= self.target_length):
             return BERYLLIUM
+        if self.sleeve and SLEEVE_INNER_RADIUS_M <= r <= SLEEVE_OUTER_RADIUS_M and SLEEVE_Z_MIN_M <= z <= SLEEVE_Z_MAX_M:
+            return BERYLLIUM
+        if self.fins and x is not None and FIN_INNER_RADIUS_M <= r <= SLEEVE_INNER_RADIUS_M and self.in_fin(x, y, z):
+            return BERYLLIUM
         if self.horn_start <= z <= self.horn_end:
-            r_conductor = self.inner_radius_scalar(z)
-            if r_conductor - self.conductor_thickness <= r <= r_conductor:
+            r_bore, r_cavity_in, r_cavity_out, r_body = self.profile_scalar(z)
+            if r_bore <= r <= r_cavity_in or r_cavity_out <= r <= r_body:
                 return ALUMINUM
         return None
 
-    def enclosed_current_fraction(self, r: float, r_outer: float) -> float:
+    def enclosed_current_fraction(self, r: float, r_outer: float,
+                                  r_inner: float = None) -> float:
         """Fraction of the horn current inside radius r.
 
         Args:
             r: Radius in meters.
             r_outer: Outer radius of the inner conductor in meters.
+            r_inner: Its inner radius; default is a 3 mm wall.
         """
-        r_inner = r_outer - self.conductor_thickness
+        if r_inner is None:
+            r_inner = r_outer - self.conductor_thickness
         if r > r_outer:
             return 1.0
         if self.skin_depth is None or r <= r_inner:
@@ -493,10 +597,10 @@ class RKHorn:
         if z < self.horn_start:
             return np.array([0.0, 0.0, 0.0])
         r = math.sqrt(x**2 + y**2)
-        r_outer = self.inner_radius_scalar(z)
-        if (r <= r_outer - self.conductor_thickness) or (r > self.horn_max_radius):  # minimum radius of horn
+        r_bore, r_outer, r_cavity_out, r_body = self.profile_scalar(z)
+        if (r <= r_bore) or (r > r_cavity_out) or (r_cavity_out <= r_outer):  # minimum radius of horn
             return np.array([0.0, 0.0, 0.0])
-        current = self.current * self.enclosed_current_fraction(r, r_outer)
+        current = self.current * self.enclosed_current_fraction(r, r_outer, r_bore)
         strength = MU0 * current / (2 * pi * r)
         return np.array([-strength*y/r, strength*x/r, 0.0])
 
@@ -563,7 +667,7 @@ class RKHorn:
         energy = math.sqrt(px_new**2 + py_new**2 + pz_new**2 + self.m**2)
         r = math.sqrt(x_mid**2 + y_mid**2)
 
-        material = self.material_at(r, z_mid)
+        material = self.material_at(r, z_mid, x_mid, y_mid)
         if material is not None:
             p_new = math.sqrt(px_new**2 + py_new**2 + pz_new**2)
             step_cm = (p_new/energy)*C_LIGHT*self.dt  # (cm/s) * seconds
