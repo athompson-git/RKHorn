@@ -1,3 +1,4 @@
+
 import numpy as np
 from numpy import sin, pi
 import matplotlib.pyplot as plt
@@ -25,7 +26,7 @@ rkhorn_kaon_data = np.genfromtxt("data/bnb_focused_Kplus_flux_rkhorn_1POT.txt")
 # columns: pi_momenta_post_horn, pi_thetas_post_horn, decay_x, decay_y, decay_z, decay_wgts, pi_weights_post_horn
 # create minimal array for ChargedMesonNeutrinoFlux
 pi_plus_flux_rkhorn = rkhorn_pion_data[rkhorn_pion_data[:,5] > 0]
-K_plus_flux_rkhorn = rkhorn_kaon_data[rkhorn_kaon_data[:,5] > 0]
+k_plus_flux_rkhorn = rkhorn_kaon_data[rkhorn_kaon_data[:,5] > 0]
 
 
 class ChargedMesonNeutrinoFlux:
@@ -34,12 +35,12 @@ class ChargedMesonNeutrinoFlux:
         if meson_type == "pion":
             self.mm = M_PI
             self.ckm = V_UD
-            self.fM = F_PI
+            self.f_m = F_PI
             self.total_width = PION_WIDTH
         elif meson_type == "kaon":
             self.mm = M_K
             self.ckm = V_US
-            self.fM = F_K
+            self.f_m = F_K
             self.total_width = KAON_WIDTH
         else:
             raise Exception("Meson type not understood!", meson_type)
@@ -56,13 +57,13 @@ class ChargedMesonNeutrinoFlux:
         self.weights = []
     
     def partial_width(self):
-        return (G_F*self.fM*self.m_lepton*self.ckm)**2 * self.mm * (1-(self.m_lepton/self.mm)**2)**2 / (8*pi)
+        return (G_F*self.f_m*self.m_lepton*self.ckm)**2 * self.mm * (1-(self.m_lepton/self.mm)**2)**2 / (8*pi)
     
     def br(self):
         return self.partial_width()/self.total_width
 
     def simulate_neutrinos(self):
-        M_M = self.mm
+        m_m = self.mm
 
         # Reproduce the neutrino flux abundance
         p_k = self.meson_flux[:,0]
@@ -71,21 +72,21 @@ class ChargedMesonNeutrinoFlux:
         phi_rnd = 2*np.pi*np.random.ranf(nsamples)
         theta_rnd = arccos(1 - 2*np.random.ranf(nsamples))
         c_rnd = cos(theta_rnd)
-        e_nu = (M_M**2 - M_MU**2)/(2*M_M)
+        e_nu = (m_m**2 - M_MU**2)/(2*m_m)
         p_nu_z = e_nu * c_rnd
 
-        beta = p_k / sqrt(p_k**2 + M_M**2)
+        beta = p_k / sqrt(p_k**2 + m_m**2)
         gamma = np.power(1-beta**2, -0.5)
         e_nu_lab = gamma*(e_nu + beta*p_nu_z)
         p_nu_z_lab = gamma*(p_nu_z + beta*e_nu)
         cos_lab = p_nu_z_lab / e_nu_lab
 
         # TODO: simulate decay position
-        decay_l = METER_BY_MEV * p_k / self.partial_width() / self.mm
+        decay_lengths = METER_BY_MEV * p_k / self.partial_width() / self.mm
         u = []
-        for l in decay_l:
-            umax = exp(-2*self.dump_dist/l) * power(exp(self.dump_dist/l) - 1, 2) \
-                if l > 1.0 else 1.0
+        for length in decay_lengths:
+            umax = exp(-2*self.dump_dist/length) * power(exp(self.dump_dist/length) - 1, 2) \
+                if length > 1.0 else 1.0
             u.append(np.random.uniform(0.0, min(umax, 1.0)))
         
         x = decay_quantile(np.array(u), p_k, self.mm, self.partial_width())
@@ -149,12 +150,12 @@ class ChargedMesonNeutrinoFlux:
 kaon_nu_gen = ChargedMesonNeutrinoFlux(k_plus_flux, meson_type="kaon")
 pion_nu_gen = ChargedMesonNeutrinoFlux(pi_plus_flux, meson_type="pion")
 pion_nu_rkhorn = ChargedMesonNeutrinoFlux(pi_plus_flux_rkhorn, meson_type="pion", n_samples=5)
-kaon_nu_rkhorn = ChargedMesonNeutrinoFlux(K_plus_flux_rkhorn, meson_type="kaon", n_samples=5)
+kaon_nu_rkhorn = ChargedMesonNeutrinoFlux(k_plus_flux_rkhorn, meson_type="kaon", n_samples=5)
 
 nu_k_e, nu_k_wgts = kaon_nu_gen.simulate_neutrinos()
 nu_pi_e, nu_pi_wgts = pion_nu_gen.simulate_neutrinos()
 nu_pi_e_rk, nu_pi_wgts_rk = pion_nu_rkhorn.simulate_neutrinos_from_decayed_flux()
-nu_K_e_rk, nu_K_wgts_rk = kaon_nu_rkhorn.simulate_neutrinos_from_decayed_flux()
+nu_k_e_rk, nu_k_wgts_rk = kaon_nu_rkhorn.simulate_neutrinos_from_decayed_flux()
 
 print("Sum of weights RKHorn = {}".format(np.sum(nu_pi_wgts_rk)))
 print("Sum of weights SW truncated = {}".format(np.sum(nu_pi_wgts)))
@@ -203,7 +204,7 @@ plt.hist(nu_pi_e, weights=nu_pi_wgts, bins=energy_bins, histtype='step',
             label=r"SW $\pi^+ \to \mu^+ \nu_\mu$", color="blue")
 plt.hist(nu_pi_e_rk, weights=nu_pi_wgts_rk, bins=energy_bins, histtype='step',
             label=r"SW + RKHorn $\pi^+ \to \mu^+ \nu_\mu$", color="blue", ls='dashed')
-plt.hist(nu_K_e_rk, weights=nu_K_wgts_rk, bins=energy_bins, histtype='step',
+plt.hist(nu_k_e_rk, weights=nu_k_wgts_rk, bins=energy_bins, histtype='step',
             label=r"SW + RKHorn $K^+ \to \mu^+ \nu_\mu$", color="red", ls='dashed')
 plt.plot(nu_pi_dat[:,0], nu_pi_dat[:,1], marker='_', ls='none',
             label=r"MiniBooNE $\pi^+$ model", color='lightsteelblue')
@@ -224,14 +225,14 @@ plt.close()
 # compare to rates / 50 MeV / POT with PhysRevD.84.114021
 
 print("Sum of my pi+ -> nu weights = ", np.sum(nu_pi_wgts_rk))
-print("Sum of my K+ -> nu weights = ", np.sum(nu_K_wgts_rk))
+print("Sum of my K+ -> nu weights = ", np.sum(nu_k_wgts_rk))
 print("Sum of MB pi+ -> nu weights = ", np.sum(nu_pi_dat[:,1]))
 print("Sum of MB K+ -> nu weights = ", np.sum(nu_k_dat[:,1]))
 
 energy_bins_50 = np.arange(0.0, 3800, 50)
 plt.hist(nu_pi_e_rk, weights=nu_pi_wgts_rk, bins=energy_bins_50, histtype='step',
             label=r"SW + RKHorn $\pi^+ \to \mu^+ \nu_\mu$", color="b")
-plt.hist(nu_K_e_rk, weights=nu_K_wgts_rk, bins=energy_bins_50, histtype='step',
+plt.hist(nu_k_e_rk, weights=nu_k_wgts_rk, bins=energy_bins_50, histtype='step',
             label=r"SW + RKHorn $K^+ \to \mu^+ \nu_\mu$", color="r")
 plt.plot(nu_pi_dat[:,0], nu_pi_dat[:,1], marker='_', ls='none',
             label=r"MiniBooNE $\pi^+$ model", color='lightsteelblue')
