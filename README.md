@@ -21,7 +21,7 @@ The RKHorn classes implement a very basic set of approximations to model the cha
 * Similarly, we implement the Feynman-Scaling (FS) parameterization for $K^+$ production (a modified SW fit is also available)
 * The meson yield per proton-on-target is (probability that the proton has a reaction in the 71.1 cm target) $\times$ (meson production cross section) / (p-Be reaction cross section), where "reaction" means inelastic excluding quasi-elastic, 177.5 mb at 8.89 GeV/c
 * The charged mesons are propagated through the target and horn according to simple equations of motion solved by Runge-Kutta finite timestep propagation
-* The target, its sleeve and fins, the horn and the collimator follow the geometry file of Fermilab's G4BNB beam simulation, [BooNE_50m.gdml](https://github.com/SBNSoftware/G4BNB/blob/v1.1.1/geometry/BooNE_50m.gdml)
+* The target, its sleeve and fins, the horn and the collimator follow the geometry file of Fermilab's G4BNB beam simulation, [BooNE_50m.gdml](https://github.com/SBNSoftware/G4BNB/blob/v1.1.1/geometry/BooNE_50m.gdml) [4], which was imported from the original MiniBooNE simulation [5]
 * When the mesons are in material (the beryllium target, its sleeve and fins, or the aluminum conductors of the horn), Bethe-Bloch energy loss with the density-effect correction is applied at each timestep and the meson weight is reduced by its probability of a hadronic interaction, $\exp(-n \sigma \ell)$
 * Each timestep update is governed by the Lorentz force law equation of motion, with an azimuthally symmetric magnetic field between the inner and outer conductors of the horn. The current enters the inner conductor over a skin depth of 1.4 mm, as in the nominal model of [3], so part of the field lies inside the aluminum
 * Mesons decay in flight with their own lifetime, inside the horn or downstream of it. A decay counts if it happens before the beam stop (50 m), inside the decay pipe (3 ft radius), and the meson cleared the collimator. Downstream of the horn the beamline is filled with air, which removes about 2% of the mesons. A negative meson that stops in material is captured by a nucleus and gives no neutrino
@@ -71,7 +71,10 @@ The animation below shows these steps for an illustrative pulse of 30 protons wi
 #### References:
 * [1] "A measurement of hadron production cross-sections for the simulation of accelerator neutrino beams and a search for muon neutrino to electron neutrino oscillations in the $\Delta m^2$ ~ 1 eV$^2$ region" David W. Schmitz, Thesis. [https://inspirehep.net/literature/791454](https://inspirehep.net/literature/791454)
 * [2] "Improved Parameterization of K+ Production in p-Be Collisions at Low Energy Using Feynman Scaling" Mariani, Cheng, Conrad, Shaevitz [Phys.Rev.D 84 (2011) 114021] [https://arxiv.org/abs/1110.0417v2](https://arxiv.org/abs/1110.0417v2)
-* [3] "Neutrino flux prediction at MiniBooNE" (MiniBooNE Collaboration) [PRD 79, 072002 (2009)] [https://arxiv.org/abs/0806.1449](https://arxiv.org/abs/0806.1449) 
+* [3] "Neutrino flux prediction at MiniBooNE" (MiniBooNE Collaboration) [PRD 79, 072002 (2009)] [https://arxiv.org/abs/0806.1449](https://arxiv.org/abs/0806.1449)
+* [4] G4BNB geometry file ```BooNE_50m.gdml``` (SBN Program, G4BNB v1.1.1): the Geant4 geometry of the BNB target, horn and decay region, and the source of the target, sleeve, fin, horn and collimator dimensions used here. [https://github.com/SBNSoftware/G4BNB/blob/v1.1.1/geometry/BooNE_50m.gdml](https://github.com/SBNSoftware/G4BNB/blob/v1.1.1/geometry/BooNE_50m.gdml)
+* [5] "Towards An Updated Simulation of the Booster Neutrino Beam" Josephine L. Paton, for the SBN Program, NuFact 2024 [FERMILAB-CONF-24-0887-PPD] [https://arxiv.org/abs/2501.06323](https://arxiv.org/abs/2501.06323)
+* [6] MiniBooNE horn body, engineering drawing ```mh1-2d-ref.dwf``` and assembly renderings, Bartoszek Engineering. This is the as-built hardware; it is kept for cross-checks and is not used by the code. [https://www.bartoszekeng.com/mboone/hornbody/hornbody.htm](https://www.bartoszekeng.com/mboone/hornbody/hornbody.htm)
 
 ## Example Usage
 
