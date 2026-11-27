@@ -1,6 +1,6 @@
 # RKHorn
 
-[![DOI](https://zenodo.org/badge/754366396.svg)](https://doi.org/10.5281/zenodo.14219232)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14219232.svg)](https://doi.org/10.5281/zenodo.14219232)
 
 A lightweight python library for simulating proton beam-induced charged pion fluxes and their radiative transport through a magnetic horn focusing system.
 
